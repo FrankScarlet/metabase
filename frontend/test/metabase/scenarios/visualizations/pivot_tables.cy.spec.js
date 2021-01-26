@@ -2,6 +2,7 @@ import {
   signInAsAdmin,
   restore,
   visitQuestionAdhoc,
+  getIframeBody,
   popover,
 } from "__support__/cypress";
 import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
@@ -219,6 +220,33 @@ describe("scenarios > visualizations > pivot tables", () => {
     cy.findByText("294").should("not.exist"); // the other one is still hidden
   });
 
+  it("should allow column formatting", () => {
+    visitQuestionAdhoc({ dataset_query: testQuery, display: "pivot" });
+
+    cy.findByText(/Count by Users? → Source and Products? → Category/); // ad-hoc title
+
+    cy.findByText("Settings").click();
+    assertOnPivotSettings();
+    cy.findAllByText("Fields to use for the table")
+      .parent()
+      .findByText(/Users? → Source/)
+      .click();
+    cy.findByText("Formatting");
+    cy.findByText(/See options/).click();
+
+    cy.log("**-- New panel for the column options --**");
+    cy.findByText(/Column title/);
+
+    cy.log("**-- Change the title for this column --**");
+    cy.get("input[id=column_title]")
+      .clear()
+      .type("ModifiedTITLE");
+    cy.findByText("Done").click();
+    cy.get(".Visualization").within(() => {
+      cy.findByText("ModifiedTITLE");
+    });
+  });
+
   it("should display an error message for native queries", () => {
     cy.server();
     // native queries should use the normal dataset endpoint even when set to pivot
@@ -238,8 +266,51 @@ describe("scenarios > visualizations > pivot tables", () => {
     cy.findByText("Pivot tables can only be used with aggregated queries.");
   });
 
-  describe.skip("sharing (metabase#14447)", () => {
+  describe("dashboards", () => {
     beforeEach(() => {
+      cy.log("**--1. Create a question--**");
+      cy.request("POST", "/api/card", {
+        name: QUESTION_NAME,
+        dataset_query: testQuery,
+        display: "pivot",
+        visualization_settings: {},
+      }).then(({ body: { id: QUESTION_ID } }) => {
+        cy.log("**--2. Create new dashboard--**");
+        cy.request("POST", "/api/dashboard", {
+          name: DASHBOARD_NAME,
+        }).then(({ body: { id: DASHBOARD_ID } }) => {
+          cy.log("**--Add previously created question to that dashboard--**");
+          cy.request("POST", `/api/dashboard/${DASHBOARD_ID}/cards`, {
+            cardId: QUESTION_ID,
+          }).then(({ body: { id: DASH_CARD_ID } }) => {
+            cy.log("**--Resize the dashboard card--**");
+            cy.request("PUT", `/api/dashboard/${DASHBOARD_ID}/cards`, {
+              cards: [
+                {
+                  id: DASH_CARD_ID,
+                  card_id: QUESTION_ID,
+                  row: 0,
+                  col: 0,
+                  sizeX: 12,
+                  sizeY: 8,
+                },
+              ],
+            });
+            cy.log("**--Open the dashboard--**");
+            cy.visit(`/dashboard/${DASHBOARD_ID}`);
+          });
+        });
+      });
+    });
+
+    it("should display a pivot table on a dashboard (metabase#14465)", () => {
+      assertOnPivotFields();
+    });
+  });
+
+  describe("sharing (metabase#14447)", () => {
+    beforeEach(() => {
+      cy.viewport(1400, 800); // Row totals on embed preview was getting cut off at the normal width
       cy.log("**--1. Create a question--**");
       cy.request("POST", "/api/card", {
         name: QUESTION_NAME,
@@ -309,16 +380,18 @@ describe("scenarios > visualizations > pivot tables", () => {
             .then($value => {
               cy.visit($value);
             });
-          cy.findByText(test.subject);
+          cy.findAllByText(test.subject); // the inspector only saw one, but findByText failed due to multiple elements
           assertOnPivotFields();
         });
 
-        it("should display pivot table in an embed preview", () => {
+        // Skipped to avoid flake
+        it.skip("should display pivot table in an embed preview", () => {
           cy.findByText(
             /Embed this (question|dashboard) in an application/,
           ).click();
+          // we use preview endpoints when MB is iframed in itself
           cy.findByText(test.subject);
-          assertOnPivotFields();
+          getIframeBody().within(assertOnPivotFields);
         });
 
         it("should display pivot table in an embed URL", () => {
@@ -326,6 +399,7 @@ describe("scenarios > visualizations > pivot tables", () => {
             /Embed this (question|dashboard) in an application/,
           ).click();
           cy.findByText("Publish").click();
+          // visit the iframe src directly to ensure it's not sing preview endpoints
           cy.get("iframe").then($iframe => {
             cy.visit($iframe[0].src);
             cy.findByText(test.subject);
