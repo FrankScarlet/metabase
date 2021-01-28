@@ -12,6 +12,15 @@ describe("scenarios > admin > settings", () => {
     signInAsAdmin();
   });
 
+  it("should prompt admin to migrate to the hosted instance", () => {
+    cy.visit("/admin/settings/setup");
+    cy.findByText("Have your server maintained for you.");
+    cy.findByText("Migrate to Metabase Cloud.");
+    cy.findAllByRole("link", { name: "Learn more" })
+      .should("have.attr", "href")
+      .and("include", "/migrate/");
+  });
+
   it("should surface an error when validation for any field fails (metabase#4506)", () => {
     const BASE_URL = Cypress.config().baseUrl;
     const DOMAIN_AND_PORT = BASE_URL.replace("http://", "");
@@ -176,6 +185,23 @@ describe("scenarios > admin > settings", () => {
     // check the reset formatting in a question
     openOrdersTable();
     cy.contains(/^February 11, 2019, 9:40 PM$/);
+  });
+
+  it("should search for and select a new timezone", () => {
+    cy.server();
+    cy.route("PUT", "**/report-timezone").as("reportTimezone");
+
+    cy.visit("/admin/settings/localization");
+    cy.contains("Report Timezone")
+      .closest("li")
+      .find(".AdminSelect")
+      .click();
+
+    cy.findByPlaceholderText("Find...").type("Centr");
+    cy.findByText("US/Central").click({ force: true });
+
+    cy.wait("@reportTimezone");
+    cy.contains("US/Central");
   });
 
   if (version.edition !== "enterprise") {
