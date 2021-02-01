@@ -188,6 +188,10 @@
       (log/tracef "Saving results metadata for GTAP %s Card %s" gtap-id card-id)
       (db/update! Card card-id :result_metadata new-metadata))))
 
+(defn- reconcile-metadata
+  [table-id metadata]
+  (map (comp (gtap/table-field-names->cols table-id) :name) metadata))
+
 (s/defn ^:private gtap->source :- {:source-query                     s/Any
                                    (s/optional-key :source-metadata) [mbql.s/SourceQueryMetadata]
                                    s/Keyword                         s/Any}
@@ -199,14 +203,17 @@
 
   that will be called if we end up running the GTAP source query in question to infer the metadata. This callback
   should save the metadata so we don't have to run the query again in the future."
-  [{card-id :card_id, table-id :table_id, :as gtap} :- su/Map run-gtap-source-query-for-metadata?]
-  (let [source-query            (preprocess-source-query ((if card-id card-gtap->source table-gtap->source) gtap))
-        run-query-for-metadata? (and run-gtap-source-query-for-metadata? (empty? (:source-metadata source-query)))]
-    (if-not run-query-for-metadata?
-      source-query
-      (let [metadata (run-gtap-source-query-for-metadata table-id source-query)]
-        (update-metadata-for-gtap! gtap metadata)
-        (assoc source-query :source-metadata metadata)))))
+  [{card-id :card_id, table-id :table_id, :as gtap} :- su/Map, run-gtap-source-query-for-metadata?]
+  (let [source-query (preprocess-source-query ((if card-id
+                                                 card-gtap->source
+                                                 table-gtap->source) gtap))
+        source-query (if-not (and run-gtap-source-query-for-metadata?
+                                  (empty? (:source-metadata source-query)))
+                       source-query
+                       (let [metadata (run-gtap-source-query-for-metadata table-id source-query)]
+                         (update-metadata-for-gtap! gtap metadata)
+                         (assoc source-query :source-metadata metadata)))]
+    (update source-query :source-metadata (partial reconcile-metadata table-id))))
 
 (s/defn ^:private gtap->perms-set :- #{perms/ObjectPath}
   "Calculate the set of permissions needed to run the query associated with a GTAP; this set of permissions is excluded
@@ -299,11 +306,10 @@
 
 (defn- gtapped-query
   "Apply GTAPs to `query` and return the updated version of `query`."
-  [query table-id->gtap]
-  (-> query
-      (apply-gtaps table-id->gtap)
-      (update :gtap-perms (fn [perms]
-                            (into (set perms) (gtaps->perms-set (vals table-id->gtap)))))))
+  [query table-id->gtap context]
+  {:query   (apply-gtaps query table-id->gtap)
+   :context (update context :gtap-perms (fn [perms]
+                                          (into (set perms) (gtaps->perms-set (vals table-id->gtap)))))})
 
 (defn apply-row-level-permissions
   "Does the work of swapping the given table the user was querying against with a nested subquery that restricts the
@@ -312,9 +318,10 @@
   (fn [query rff context]
     (if-let [table-id->gtap (when *current-user-id*
                               (query->table-id->gtap query))]
-      (qp
-       (gtapped-query query table-id->gtap)
-       (fn [metadata]
-         (rff (merge-metadata query metadata)))
-       context)
+      (let [{query' :query, context' :context} (gtapped-query query table-id->gtap context)]
+        (qp
+         query'
+         (fn [metadata]
+           (rff (merge-metadata query metadata)))
+         context'))
       (qp query rff context))))

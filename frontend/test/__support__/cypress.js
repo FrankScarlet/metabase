@@ -222,6 +222,10 @@ export const describeWithToken = Cypress.env("HAS_ENTERPRISE_TOKEN")
   ? describe
   : describe.skip;
 
+export const itOpenSourceOnly = Cypress.env("HAS_ENTERPRISE_TOKEN")
+  ? it.skip
+  : it;
+
 // TODO: does this really need to be a global helper function?
 export function createBasicAlert({ firstAlert, includeNormal } = {}) {
   cy.get(".Icon-bell").click();
@@ -250,6 +254,16 @@ export function setupDummySMTP() {
     "email-smtp-username": "nevermind",
     "email-smtp-password": "it-is-secret-NOT",
     "email-from-address": "nonexisting@metabase.test",
+  });
+}
+
+export function expectedRouteCalls({ route_alias, calls } = {}) {
+  const requestsCount = alias =>
+    cy.state("requests").filter(req => req.alias === alias);
+  // It is hard and unreliable to assert that something didn't happen in Cypress
+  // This solution was the only one that worked out of all others proposed in this SO topic: https://stackoverflow.com/a/59302542/8815185
+  cy.get("@" + route_alias).then(() => {
+    expect(requestsCount(route_alias)).to.have.length(calls);
   });
 }
 
