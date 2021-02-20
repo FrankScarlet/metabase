@@ -22,18 +22,18 @@
   ;; name and display name can be blank because some wacko DBMSes like SQL Server return blank column names for
   ;; unaliased aggregations like COUNT(*) (this only applies to native queries, since we determine our own names for
   ;; MBQL.)
-  {:name                          s/Str
-   :display_name                  s/Str
+  {:name                           s/Str
+   :display_name                   s/Str
    ;; type of the Field. For Native queries we look at the values in the first 100 rows to make an educated guess
-   :base_type                     su/FieldType
-   (s/optional-key :special_type) (s/maybe su/FieldType)
+   :base_type                      su/FieldType
+   (s/optional-key :semantic_type) (s/maybe su/FieldType)
    ;; where this column came from in the original query.
-   :source                        (s/enum :aggregation :fields :breakout :native)
+   :source                         (s/enum :aggregation :fields :breakout :native)
    ;; a field clause that can be used to refer to this Field if this query is subsequently used as a source query.
    ;; Added by this middleware as one of the last steps.
-   (s/optional-key :field_ref)    mbql.s/FieldOrAggregationReference
+   (s/optional-key :field_ref)     mbql.s/FieldOrAggregationReference
    ;; various other stuff from the original Field can and should be included such as `:settings`
-   s/Any                          s/Any})
+   s/Any                           s/Any})
 
 ;; TODO - I think we should change the signature of this to `(column-info query cols rows)`
 (defmulti column-info
@@ -92,12 +92,14 @@
 ;;; +----------------------------------------------------------------------------------------------------------------+
 
 (s/defn ^:private join-with-alias :- (s/maybe mbql.s/Join)
-  [{:keys [joins]} :- su/Map, join-alias :- su/NonBlankString]
-  (some
-   (fn [{:keys [alias], :as join}]
-     (when (= alias join-alias)
-       join))
-   joins))
+  [{:keys [joins source-query]} :- su/Map, join-alias :- su/NonBlankString]
+  (or (some
+       (fn [{:keys [alias], :as join}]
+         (when (= alias join-alias)
+           join))
+       joins)
+      (when source-query
+        (join-with-alias source-query join-alias))))
 
 ;;; --------------------------------------------------- Field Info ---------------------------------------------------
 
@@ -119,12 +121,12 @@
   [expression]
   (cond
     (string? expression)
-    {:base_type    :type/Text
-     :special_type nil}
+    {:base_type     :type/Text
+     :semantic_type nil}
 
     (number? expression)
-    {:base_type    :type/Number
-     :special_type nil}
+    {:base_type     :type/Number
+     :semantic_type nil}
 
     (mbql.u/is-clause? #{:field-id :field-literal :joined-field :fk-> :datetime-field :binning-strategy} expression)
     (col-info-for-field-clause {} expression)
@@ -133,8 +135,8 @@
     (infer-expression-type (second expression))
 
     (mbql.u/is-clause? :length expression)
-    {:base_type    :type/BigInteger
-     :special_type :type/Number}
+    {:base_type     :type/BigInteger
+     :semantic_type :type/Number}
 
     (mbql.u/is-clause? :case expression)
     (->> expression
@@ -145,16 +147,16 @@
          infer-expression-type)
 
     (mbql.u/datetime-arithmetics? expression)
-    {:base_type    :type/DateTime
-     :special_type nil}
+    {:base_type     :type/DateTime
+     :semantic_type nil}
 
     (mbql.u/is-clause? mbql.s/string-expressions expression)
-    {:base_type    :type/Text
-     :special_type nil}
+    {:base_type     :type/Text
+     :semantic_type nil}
 
     :else
-    {:base_type    :type/Float
-     :special_type :type/Number}))
+    {:base_type     :type/Float
+     :semantic_type :type/Number}))
 
 (s/defn col-info-for-field-clause :- {:field_ref mbql.s/Field, s/Keyword s/Any}
   "Return column metadata for a field clause such as `:field-id` or `:field-literal`."
@@ -165,15 +167,15 @@
     [:binning-strategy field strategy _ resolved-options]
     (let [recursive-info (col-info-for-field-clause inner-query field)]
       (assoc recursive-info
-        :binning_info (assoc (u/snake-keys resolved-options)
-                        :binning_strategy strategy)
-        :field_ref    (assoc (vec &match) 1 (:field_ref recursive-info))))
+             :binning_info (assoc (u/snake-keys resolved-options)
+                                  :binning_strategy strategy)
+             :field_ref    (assoc (vec &match) 1 (:field_ref recursive-info))))
 
     [:datetime-field field unit]
     (let [recursive-info (col-info-for-field-clause inner-query field)]
       (assoc recursive-info
-        :unit      unit
-        :field_ref (assoc (vec &match) 1 (:field_ref recursive-info))))
+             :unit      unit
+             :field_ref (assoc (vec &match) 1 (:field_ref recursive-info))))
 
     [:joined-field join-alias field]
     (let [{:keys [fk-field-id], :as join} (join-with-alias inner-query join-alias)]
@@ -190,14 +192,14 @@
     ;; TODO - should be able to remove this now
     [:fk-> [:field-id source-field-id] field]
     (assoc (col-info-for-field-clause inner-query field)
-      :field_ref  &match
-      :fk_field_id source-field-id)
+           :field_ref  &match
+           :fk_field_id source-field-id)
 
     ;; TODO - should be able to remove this now
     ;; for FKs where source is a :field-literal don't include `:fk_field_id`
     [:fk-> _ field]
     (assoc (col-info-for-field-clause inner-query field)
-      :field_ref &match)
+           :field_ref &match)
 
     ;; for field literals, look for matching `source-metadata`, and use that if we can find it; otherwise generate
     ;; basic info based on the content of the field literal
@@ -206,7 +208,7 @@
                {:name         field-name
                 :base_type    field-type
                 :display_name (humanization/name->human-readable-name field-name)})
-      :field_ref &match)
+           :field_ref &match)
 
     [:expression expression-name]
     (merge
@@ -223,7 +225,7 @@
                field
                (let [parent (col-info-for-field-clause inner-query [:field-id parent-id])]
                  (update field :name #(str (:name parent) \. %))))
-        :field_ref &match))
+             :field_ref &match))
 
     ;; we should never reach this if our patterns are written right so this is more to catch code mistakes than
     ;; something the user should expect to see
@@ -360,26 +362,26 @@
     [(_ :guard #{:count :distinct}) & args]
     (merge
      (col-info-for-aggregation-clause inner-query args)
-     {:base_type    :type/BigInteger
-      :special_type :type/Number}
+     {:base_type     :type/BigInteger
+      :semantic_type :type/Number}
      (ag->name-info inner-query &match))
 
     [:count-where _]
     (merge
-     {:base_type    :type/Integer
-      :special_type :type/Number}
+     {:base_type     :type/Integer
+      :semantic_type :type/Number}
      (ag->name-info inner-query &match))
 
     [:share _]
     (merge
-     {:base_type    :type/Float
-      :special_type :type/Number}
+     {:base_type     :type/Float
+      :semantic_type :type/Number}
      (ag->name-info inner-query &match))
 
     ;; get info from a Field if we can (theses Fields are matched when ag clauses recursively call
     ;; `col-info-for-ag-clause`, and this info is added into the results)
     (_ :guard mbql.preds/Field?)
-    (select-keys (col-info-for-field-clause inner-query &match) [:base_type :special_type :settings])
+    (select-keys (col-info-for-field-clause inner-query &match) [:base_type :semantic_type :settings])
     #{:expression :+ :- :/ :*}
     (merge
      (infer-expression-type &match)
@@ -388,8 +390,8 @@
 
     [:case _ & _]
     (merge
-     {:base_type    :type/Float
-      :special_type :type/Number}
+     {:base_type     :type/Float
+      :semantic_type :type/Number}
      (ag->name-info inner-query &match))
 
     ;; get name/display-name of this ag
@@ -407,14 +409,15 @@
     (when (seq (:rows results))
       (when-not (= expected-count actual-count)
         (throw
-         (Exception.
-          (str (deferred-tru "Query processor error: mismatched number of columns in query and results.")
-               " "
-               (deferred-tru "Expected {0} fields, got {1}" expected-count actual-count)
-               "\n"
-               (deferred-tru "Expected: {0}" (mapv :name returned-mbql-columns))
-               "\n"
-               (deferred-tru "Actual: {0}" (vec (:columns results))))))))))
+         (ex-info (str (tru "Query processor error: mismatched number of columns in query and results.")
+                       " "
+                       (tru "Expected {0} fields, got {1}" expected-count actual-count)
+                       "\n"
+                       (tru "Expected: {0}" (mapv :name returned-mbql-columns))
+                       "\n"
+                       (tru "Actual: {0}" (vec (:columns results))))
+                  {:expected returned-mbql-columns
+                   :actual   (:cols results)}))))))
 
 (s/defn ^:private cols-for-fields
   [{:keys [fields], :as inner-query} :- su/Map]
@@ -545,7 +548,7 @@
   ;; merge in `:cols` if returned by the driver, then make sure the `:name` of each map in `:cols` is unique, since
   ;; the FE uses it as a key for stuff like column settings
   (deduplicate-cols-names
-   (merge-cols-returned-by-driver (column-info query result) cols-returned-by-driver)))
+   (merge-cols-returned-by-driver (map (partial into {}) (column-info query result)) cols-returned-by-driver)))
 
 (defn base-type-inferer
   "Native queries don't have the type information from the original `Field` objects used in the query.
@@ -568,8 +571,9 @@
                                                           (assoc col :base_type base-type)))
                             base-types)]
        (rf (cond-> result
-             (map? result) (assoc-in [:data :cols] (merged-column-info query
-                                                                       (assoc metadata :rows truncated-rows)))))))))
+             (map? result) (assoc-in [:data :cols] (merged-column-info
+                                                    query
+                                                    (assoc metadata :rows truncated-rows)))))))))
 
 (defn add-column-info
   "Middleware for adding type information about the columns in the query results (the `:cols` key)."

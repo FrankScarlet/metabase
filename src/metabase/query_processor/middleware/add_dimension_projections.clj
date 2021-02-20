@@ -192,7 +192,7 @@
    :remapped_from remapped-from
    :remapped_to   nil
    :base_type     base-type
-   :special_type  nil})
+   :semantic_type nil})
 
 (defn- transform-values-for-col
   "Converts `values` to a type compatible with the base_type found for `col`. These values should be directly comparable
@@ -308,8 +308,9 @@
   `add-fk-remaps` for making remapping changes to the query (before executing the query). Then delegates to
   `remap-results` to munge the results after query execution."
   [qp]
-  (fn [{query-type :type, :as query} rff context]
-    (if (= query-type :native)
+  (fn [{query-type :type, :as query, {:keys [disable-remaps?], :or {disable-remaps? false}} :middleware} rff context]
+    (if (or (= query-type :native)
+            disable-remaps?)
       (qp query rff context)
       (let [[remapping-dimensions query'] (add-fk-remaps query)]
         (qp query' (remap-results-rff remapping-dimensions rff) context)))))

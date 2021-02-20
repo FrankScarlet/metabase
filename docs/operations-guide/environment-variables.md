@@ -189,7 +189,7 @@ Default: `null`
 
 A JDBC-style connection URI that can be used instead of most of `MB_DB_*` like [MB_DB_HOST](#mb_db_host). Also used when certain Connection String parameters are required for the connection. The connection type requirement is the same as [MB_DB_TYPE](#mb_db_type).
 
-Example: `jdbc:postgresql://dbuser:dbpassword@db.example.com:port/mydb?ssl=true&sslfactory=org.postgresql.ssl.NonValidatingFactory`
+Example: `jdbc:postgresql://db.example.com:port/mydb?user=dbuser&password=dbpassword&ssl=true&sslfactory=org.postgresql.ssl.NonValidatingFactory`
 
 #### `MB_DB_DBNAME`
 
@@ -1004,6 +1004,13 @@ Type: string<br>
 Default: `X-Forwarded-For`
 
 Identify the source of HTTP requests by this header's value, instead of its remote address. Related to [MB_DISABLE_SESSION_THROTTLE](#mb_disable_session_throttle).
+
+#### `MB_SSH_HEARTBEAT_INTERVAL_SEC`
+
+Type: integer<br>
+Default: `180`
+
+Controls how often the heartbeats are sent when an SSH tunnel is established (in seconds).
 
 #### `MB_SSL_CERTIFICATE_PUBLIC_KEY`
 
