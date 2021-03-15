@@ -175,7 +175,7 @@
   ["-target" "1.8", "-source" "1.8"]
 
   :source-paths
-  ["src" "backend/mbql/src"]
+  ["src" "backend/mbql/src" "shared/src"]
 
   :java-source-paths
   ["java"]
@@ -193,7 +193,7 @@
 
    :dev
    {:source-paths ["dev/src" "local/src"]
-    :test-paths   ["test" "backend/mbql/test"]
+    :test-paths   ["test" "backend/mbql/test" "shared/test"]
 
     :dependencies
     [[clj-http-fake "1.0.3" :exclusions [slingshot]]                  ; Library to mock clj-http responses
@@ -398,14 +398,19 @@
    [:test-common
     {:dependencies [[camsaul/cloverage "1.2.1.1" :exclusions [riddley]]]
      :plugins      [[camsaul/lein-cloverage  "1.2.1.1"]]
-     :source-paths ^:replace ["src" "backend/mbql/src" "enterprise/backend/src"]
-     :test-paths   ^:replace ["test" "backend/mbql/test" "enterprise/backend/test"]
+     :source-paths ^:replace ["src" "backend/mbql/src" "enterprise/backend/src" "shared/src"]
+     :test-paths   ^:replace ["test" "backend/mbql/test" "enterprise/backend/test" "shared/test"]
      :cloverage    {:fail-threshold 69
                     :exclude-call
                     [;; don't instrument logging forms, since they won't get executed as part of tests anyway
                      ;; log calls expand to these
                      clojure.tools.logging/logf
-                     clojure.tools.logging/logp]}}]
+                     clojure.tools.logging/logp]
+                    ;; don't instrument Postgres/MySQL driver namespaces, because we don't current run tests for them
+                    ;; as part of recording test coverage, which means they can give us false positives.
+                    :ns-exclude-regex
+                    [#"metabase\.driver\.mysql"
+                     #"metabase\.driver\.postgres"]}}]
 
    ;; build the uberjar with `lein uberjar`
    :uberjar

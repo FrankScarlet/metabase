@@ -16,19 +16,13 @@ describe("scenarios > question > null", () => {
   });
 
   it("should display rows whose value is `null` (metabase#13571)", () => {
-    cy.request("POST", "/api/card", {
+    cy.createQuestion({
       name: "13571",
-      dataset_query: {
-        database: 1,
-        query: {
-          "source-table": ORDERS_ID,
-          fields: [["field", ORDERS.DISCOUNT, null]],
-          filter: ["=", ["field", ORDERS.ID, null], 1],
-        },
-        type: "query",
+      query: {
+        "source-table": ORDERS_ID,
+        fields: [["field", ORDERS.DISCOUNT, null]],
+        filter: ["=", ["field", ORDERS.ID, null], 1],
       },
-      display: "table",
-      visualization_settings: {},
     });
 
     // find and open previously created question
@@ -47,33 +41,25 @@ describe("scenarios > question > null", () => {
   it.skip("pie chart should handle `0`/`null` values (metabase#13626)", () => {
     // Preparation for the test: "Arrange and Act phase" - see repro steps in #13626
 
-    // 1. create a question
-    cy.request("POST", "/api/card", {
+    cy.createQuestion({
       name: "13626",
-      dataset_query: {
-        database: 1,
-        query: {
-          "source-table": ORDERS_ID,
-          aggregation: [["sum", ["expression", "NewDiscount"]]],
-          breakout: [["field", ORDERS.ID, null]],
-          expressions: {
-            NewDiscount: [
-              "case",
-              [[["=", ["field", ORDERS.ID, null], 2], 0]],
-              { default: ["field", ORDERS.DISCOUNT, null] },
-            ],
-          },
-          filter: ["=", ["field", ORDERS.ID, null], 1, 2, 3],
+      query: {
+        "source-table": ORDERS_ID,
+        aggregation: [["sum", ["expression", "NewDiscount"]]],
+        breakout: [["field", ORDERS.ID, null]],
+        expressions: {
+          NewDiscount: [
+            "case",
+            [[["=", ["field", ORDERS.ID, null], 2], 0]],
+            { default: ["field", ORDERS.DISCOUNT, null] },
+          ],
         },
-        type: "query",
+        filter: ["=", ["field", ORDERS.ID, null], 1, 2, 3],
       },
+
       display: "pie",
-      visualization_settings: {},
     }).then(({ body: { id: questionId } }) => {
-      // 2. create a dashboard
-      cy.request("POST", "/api/dashboard", {
-        name: "13626D",
-      }).then(({ body: { id: dashboardId } }) => {
+      cy.createDashboard("13626D").then(({ body: { id: dashboardId } }) => {
         // add filter (ID) to the dashboard
         cy.request("PUT", `/api/dashboard/${dashboardId}`, {
           parameters: [
@@ -154,11 +140,7 @@ describe("scenarios > question > null", () => {
         display: "scalar",
         visualization_settings: {},
       }).then(({ body: { id: Q2_ID } }) => {
-        cy.log("Create Dashboard");
-
-        cy.request("POST", "/api/dashboard", {
-          name: "13801D",
-        }).then(({ body: { id: DASHBOARD_ID } }) => {
+        cy.createDashboard("13801D").then(({ body: { id: DASHBOARD_ID } }) => {
           cy.log("Add both previously created questions to the dashboard");
 
           [Q1_ID, Q2_ID].forEach((questionId, index) => {

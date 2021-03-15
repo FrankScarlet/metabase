@@ -25,7 +25,7 @@
             [pretty.core :refer [PrettyPrintable]]
             [schema.core :as s])
   (:import metabase.models.field.FieldInstance
-           metabase.util.honeysql_extensions.Identifier))
+           [metabase.util.honeysql_extensions Identifier TypedHoneySQLForm]))
 
 ;; TODO - yet another `*query*` dynamic var. We should really consolidate them all so we only need a single one.
 (def ^:dynamic ^:private *query*
@@ -250,6 +250,10 @@
     [:type/Text             (:isa? :type/TemporalString)] (cast-temporal-string driver (:semantic_type field) field-identifier)
     :else field-identifier))
 
+(defmethod ->honeysql [:sql TypedHoneySQLForm]
+  [driver typed-form]
+  (->honeysql driver (hx/unwrap-typed-honeysql-form typed-form)))
+
 ;; default implmentation is a no-op; other drivers can override it as needed
 (defmethod ->honeysql [:sql Identifier]
   [_ identifier]
@@ -260,25 +264,38 @@
   "Are we inside a joined field whose join is at the current level of the query?"
   false)
 
+(defmulti prefix-field-alias
+  "Create a Field alias by combining a `prefix` string with `field-alias` string (itself is the result of the
+  `field->alias` method). The default implementation just joins the two strings with `__` -- override this if you need
+  to do something different."
+  {:arglists '([driver prefix field]), :added "0.38.1"}
+  driver/dispatch-on-initialized-driver
+  :hierarchy #'driver/hierarchy)
+
+(defmethod prefix-field-alias :sql
+  [_ prefix field-alias]
+  (str prefix "__" field-alias))
+
 (s/defn ^:private unambiguous-field-alias :- su/NonBlankString
   [driver [_ field-id {:keys [join-alias]}] :- mbql.s/field:id]
-  (let [alias (field->alias driver (qp.store/field field-id))]
-    (if (and join-alias alias
+  (let [field-alias (field->alias driver (qp.store/field field-id))]
+    (if (and join-alias field-alias
              (not= join-alias *table-alias*)
              (not *joined-field?*))
-      (str join-alias "__" alias)
-      alias)))
+      (prefix-field-alias driver join-alias field-alias)
+      field-alias)))
 
 (defmethod ->honeysql [:sql (class Field)]
-  [driver {field-name :name, table-id :table_id, :as field}]
+  [driver {field-name :name, table-id :table_id, database-type :database_type, :as field}]
   ;; `indentifer` will automatically unnest nested calls to `identifier`
-  (->> (if *table-alias*
-         [*table-alias* (unambiguous-field-alias driver [:field (:id field) nil])]
-         (let [{schema :schema, table-name :name} (qp.store/table table-id)]
-           [schema table-name field-name]))
-       (apply hx/identifier :field)
-       (->honeysql driver)
-       (cast-field-if-needed driver field)))
+  (as-> (if *table-alias*
+          [*table-alias* (unambiguous-field-alias driver [:field (:id field) nil])]
+          (let [{schema :schema, table-name :name} (qp.store/table table-id)]
+            [schema table-name field-name])) expr
+    (apply hx/identifier :field expr)
+    (->honeysql driver expr)
+    (cast-field-if-needed driver field expr)
+    (hx/with-database-type-info expr database-type)))
 
 (defn compile-field-with-join-aliases
   "Compile `field-clause` to HoneySQL using the `:join-alias` from the `:field` clause options."
@@ -332,16 +349,22 @@
       (hx/* bin-width)
       (hx/+ min-value)))
 
+(def ^:dynamic *field-options*
+  "Bound to the `options` part of a `:field` clause when that clause is being compiled to HoneySQL. Useful if you store
+  additional keys there and need to access them."
+  nil)
+
 (defmethod ->honeysql [:sql :field]
   [driver [_ field-id-or-name options :as field-clause]]
-  (if (:join-alias options)
-    (compile-field-with-join-aliases driver field-clause)
-    (let [honeysql-form (if (integer? field-id-or-name)
-                          (->honeysql driver (qp.store/field field-id-or-name))
-                          (->honeysql driver (hx/identifier :field *table-alias* field-id-or-name)))]
-      (cond->> honeysql-form
-        (:temporal-unit options) (apply-temporal-bucketing driver options)
-        (:binning options)       (apply-binning options)))))
+  (binding [*field-options* options]
+    (if (:join-alias options)
+      (compile-field-with-join-aliases driver field-clause)
+      (let [honeysql-form (if (integer? field-id-or-name)
+                            (->honeysql driver (qp.store/field field-id-or-name))
+                            (->honeysql driver (hx/identifier :field *table-alias* field-id-or-name)))]
+        (cond->> honeysql-form
+          (:temporal-unit options) (apply-temporal-bucketing driver options)
+          (:binning options)       (apply-binning options))))))
 
 
 (defmethod ->honeysql [:sql :count]

@@ -129,6 +129,7 @@
 
 (deftest match-context-test
   (let [context  #'search/match-context
+        tokens   (partial map str)
         match    (fn [text] {:text text :is_match true})
         no-match (fn [text] {:text text :is_match false})]
     (testing "it groups matches together"
@@ -145,7 +146,20 @@
       (is (= [(no-match "aviary stats")]
              (context
                  ["rasta" "toucan"]
-                 ["aviary" "stats"]))))))
+                 ["aviary" "stats"]))))
+    (testing "it abbreviates when necessary"
+      (is (= [(no-match "one two…eleven twelve")
+              (match "rasta toucan")
+              (no-match "alpha beta…the end")]
+             (context
+                 (tokens '(rasta toucan))
+                 (tokens '(one two
+                           this should not be included
+                           eleven twelve
+                           rasta toucan
+                           alpha beta
+                           some other noise
+                           the end))))))))
 
 (deftest test-largest-common-subseq-length
   (let [subseq-length (partial #'search/largest-common-subseq-length =)]
@@ -169,17 +183,20 @@
 (deftest pinned-score-test
   (let [score #'search/pinned-score
         item (fn [collection-position] {:collection_position collection-position})]
-    (testing "it provides a sortable score"
-      (is (= [1 2 3 nil 0]
-             (->> [(item 0)
-                    ;; nil and 0 could theoretically be in either order, but it's a stable sort, so this is fine
-                   (item nil)
-                   (item 3)
-                   (item 1)
-                   (item 2)]
-                  (sort-by score)
-                  reverse
-                  (map :collection_position)))))))
+    (testing "it provides a sortable score, but doesn't favor magnitude"
+      (let [result (->> [(item 0)
+                         (item nil)
+                         (item 3)
+                         (item 1)
+                         (item 2)]
+                        shuffle
+                        (sort-by score)
+                        reverse
+                        (map :collection_position))]
+        (is (= #{1 2 3}
+               (set (take 3 result))))
+        (is (= #{nil 0}
+               (set (take-last 2 result))))))))
 
 (deftest recency-score-test
   (let [score    #'search/recency-score

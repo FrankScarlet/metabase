@@ -2,6 +2,34 @@ Cypress.Commands.add("icon", icon_name => {
   cy.get(`.Icon-${icon_name}`);
 });
 
+Cypress.Commands.add("createDashboard", name => {
+  cy.log(`Create a dashboard: ${name}`);
+  cy.request("POST", "/api/dashboard", { name });
+});
+
+Cypress.Commands.add(
+  "createQuestion",
+  ({
+    name = "card",
+    query = {},
+    display = "table",
+    database = 1,
+    visualization_settings = {},
+  } = {}) => {
+    cy.log(`Create a question: ${name}`);
+    cy.request("POST", "/api/card", {
+      name,
+      dataset_query: {
+        type: "query",
+        query,
+        database,
+      },
+      display,
+      visualization_settings,
+    });
+  },
+);
+
 /**
  * PERMISSIONS
  *
