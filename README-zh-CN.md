@@ -20,6 +20,49 @@
 - Go the extra mile to make the user experience pleasant 
 
 
+## 尝试编译
+
+### 前端
+
+```shell
+yarn config set registry
+npm config set registry
+yarn
+```
+
+### 后端
+
+参考[Clojars清华源的使用](https://blog.csdn.net/chybr80884/article/details/100685816)
+
+```clojure
+"cat ~/.lein/profiles.clj"
+
+{
+    :user {
+        :mirrors {
+            "central" {
+                :name "aliyun"
+                :url "https://maven.aliyun.com/repository/central"
+            }
+            "clojars" {
+                :name "tsinghua"
+                :url "https://mirrors.tuna.tsinghua.edu.cn/clojars/"
+            }
+        }
+    }
+}
+
+```
+
+然后就可以执行
+
+```shell
+lein deps
+lein run
+```
+
+最后执行 `./bin/build`试试
+
 ## 源码学习
 
 ### 登录改造 
