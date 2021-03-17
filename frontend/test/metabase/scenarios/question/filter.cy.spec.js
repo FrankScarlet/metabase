@@ -435,36 +435,30 @@ describe("scenarios > question > filter", () => {
       { name: "prodid", display_name: "ProdId", type: "number" },
     ];
 
-    cy.request("POST", "/api/card", {
+    cy.createNativeQuestion({
       name: QUESTION_NAME,
-      dataset_query: {
-        type: "native",
-        native: {
-          query:
-            "SELECT * FROM PRODUCTS WHERE 1=1 AND {{category}} [[AND ID={{prodid}}]]",
-          "template-tags": {
-            [CATEGORY_FILTER.name]: {
-              id: "00315d5e-4a41-99da-1a41-e5254dacff9d",
-              name: CATEGORY_FILTER.name,
-              "display-name": CATEGORY_FILTER.display_name,
-              type: CATEGORY_FILTER.type,
-              default: "Doohickey",
-              dimension: ["field", PRODUCTS.CATEGORY, null],
-              "widget-type": "category",
-            },
-            [ID_FILTER.name]: {
-              id: "4775bccc-e82a-4069-fc6b-2acc90aadb8b",
-              name: ID_FILTER.name,
-              "display-name": ID_FILTER.display_name,
-              type: ID_FILTER.type,
-              default: null,
-            },
+      native: {
+        query:
+          "SELECT * FROM PRODUCTS WHERE 1=1 AND {{category}} [[AND ID={{prodid}}]]",
+        "template-tags": {
+          [CATEGORY_FILTER.name]: {
+            id: "00315d5e-4a41-99da-1a41-e5254dacff9d",
+            name: CATEGORY_FILTER.name,
+            "display-name": CATEGORY_FILTER.display_name,
+            type: CATEGORY_FILTER.type,
+            default: "Doohickey",
+            dimension: ["field", PRODUCTS.CATEGORY, null],
+            "widget-type": "category",
+          },
+          [ID_FILTER.name]: {
+            id: "4775bccc-e82a-4069-fc6b-2acc90aadb8b",
+            name: ID_FILTER.name,
+            "display-name": ID_FILTER.display_name,
+            type: ID_FILTER.type,
+            default: null,
           },
         },
-        database: 1,
       },
-      display: "table",
-      visualization_settings: {},
     }).then(({ body: { id: QUESTION_ID } }) => {
       cy.visit(`/question/${QUESTION_ID}`);
 
@@ -859,5 +853,33 @@ describe("scenarios > question > filter", () => {
       expect(xhr.response.body.data.rows).to.have.lengthOf(1);
     });
     cy.findByText("wilma-muller");
+  });
+
+  it("should reject a number literal", () => {
+    openProductsTable();
+    cy.findByText("Filter").click();
+    cy.findByText("Custom Expression").click();
+
+    cy.get("[contenteditable='true']")
+      .click()
+      .type("3.14159");
+    cy.findAllByRole("button", { name: "Done" })
+      .should("not.be.disabled")
+      .click();
+    cy.findByText("Expecting boolean but found 3.14159");
+  });
+
+  it("should reject a string literal", () => {
+    openProductsTable();
+    cy.findByText("Filter").click();
+    cy.findByText("Custom Expression").click();
+
+    cy.get("[contenteditable='true']")
+      .click()
+      .type('"TheAnswer"');
+    cy.findAllByRole("button", { name: "Done" })
+      .should("not.be.disabled")
+      .click();
+    cy.findByText('Expecting boolean but found "TheAnswer"');
   });
 });
