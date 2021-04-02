@@ -40,9 +40,12 @@
       (let [driver (driver/the-driver driver)]
         (or
          (@locks driver)
-         (do
-           (swap! locks update driver #(or % (Object.)))
-           (@locks driver)))))))
+         (locking driver->create-database-lock
+           (or
+            (@locks driver)
+            (do
+              (swap! locks update driver #(or % (Object.)))
+              (@locks driver)))))))))
 
 (defmulti get-or-create-database!
   "Create DBMS database associated with `database-definition`, create corresponding Metabase Databases/Tables/Fields,
@@ -70,7 +73,7 @@
                                                           (u/pprint-to-str field-definition))))))]
           (doseq [property [:visibility-type :semantic-type :effective-type :coercion-strategy]]
             (when-let [v (get field-definition property)]
-              (log/debug (format "SET %s %s.%s -> %s" property table-name field-name v))
+              (log/debugf "SET %s %s.%s -> %s" property table-name field-name v)
               (db/update! Field (:id @field) (keyword (str/replace (name property) #"-" "_")) (u/qualified-name v)))))))))
 
 (def ^:private create-database-timeout-ms
