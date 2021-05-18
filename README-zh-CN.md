@@ -1,5 +1,33 @@
 # README
 
+> 感觉upstream的合并可以用GitHub页面去管理
+
+## 编译流程
+
+```log
+# 5800H 2021.05.18 20min
+```
+
+```bash
+# 前期准备
+# 安装 homebrew，参考官网一键[脚本](https://brew.sh/)
+# 可以用raw.hee.ink替换raw.githubusercontent.com
+brew install clojure/tools/clojure
+brew install leiningen
+# 假设你已经装好了 nodejs，配好了npm和yarn
+# 假设你已经装好了 openjdk-8-jdk 或 openjdk-11-jdk （推荐前者）
+```
+
+然后就可以执行以下的命令
+
+```bash
+yarn # 前端
+lein deps # 后端
+lein run # 后端运行
+./bin/build # 前后端一起编译
+```
+
+
 ## Zen
 
 > 待翻译
@@ -20,19 +48,18 @@
 - Go the extra mile to make the user experience pleasant 
 
 
-## 尝试编译
+## 编译踩坑
 
 ### 前端
 
 ```shell
-yarn config set registry
-npm config set registry
-yarn
+yarn config set registry https://registry.npm.taobao.org
+npm config set registry https://registry.npm.taobao.org
 ```
 
 ### 后端
 
-参考[Clojars清华源的使用](https://blog.csdn.net/chybr80884/article/details/100685816)
+[Clojars清华源加速](https://blog.csdn.net/chybr80884/article/details/100685816)
 
 ```clojure
 "cat ~/.lein/profiles.clj"
@@ -53,15 +80,6 @@ yarn
 }
 
 ```
-
-然后就可以执行
-
-```shell
-lein deps
-lein run
-```
-
-最后执行 `./bin/build`试试
 
 ## 源码学习
 
