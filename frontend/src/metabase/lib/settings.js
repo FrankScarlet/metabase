@@ -1,6 +1,8 @@
 import _ from "underscore";
 import { t, ngettext, msgid } from "ttag";
+import { parseTimestamp } from "metabase/lib/time";
 import MetabaseUtils from "metabase/lib/utils";
+import moment from "moment";
 
 // TODO: dump this from backend settings definitions
 export type SettingName =
@@ -28,7 +30,8 @@ export type SettingName =
   | "site-url"
   | "types"
   | "version"
-  | "version-info";
+  | "version-info"
+  | "version-info-last-checked";
 
 type SettingsMap = { [key: SettingName]: any };
 
@@ -61,7 +64,6 @@ class Settings {
 
   setAll(settings: SettingsMap) {
     for (const [key, value] of Object.entries(settings)) {
-      // $FlowFixMe
       this.set(key, value);
     }
   }
@@ -117,6 +119,19 @@ class Settings {
 
   trackingEnabled() {
     return this.get("anon-tracking-enabled") || false;
+  }
+
+  versionInfoLastChecked() {
+    const ts = this.get("version-info-last-checked");
+    if (ts) {
+      // app DB stores this timestamp in UTC, so convert it to the local zone to render
+      return moment
+        .utc(parseTimestamp(ts))
+        .local()
+        .format("MMMM Do YYYY, h:mm:ss a");
+    } else {
+      return t`never`;
+    }
   }
 
   docsUrl(page = "", anchor = "") {
@@ -200,9 +215,7 @@ class Settings {
 
     const descriptions = {};
     for (const [name, clause] of Object.entries(PASSWORD_COMPLEXITY_CLAUSES)) {
-      // $FlowFixMe:
       if (!clause.test(requirements, password)) {
-        // $FlowFixMe:
         descriptions[name] = clause.description(requirements);
       }
     }

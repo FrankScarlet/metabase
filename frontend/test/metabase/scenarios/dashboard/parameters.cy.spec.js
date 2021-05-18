@@ -1,4 +1,4 @@
-import { modal, popover, restore } from "__support__/cypress";
+import { modal, popover, restore } from "__support__/e2e/cypress";
 // NOTE: some overlap with parameters-embedded.cy.spec.js
 
 describe("scenarios > dashboard > parameters", () => {
@@ -60,8 +60,8 @@ describe("scenarios > dashboard > parameters", () => {
 
     // add a category filter
     cy.icon("filter").click();
-    cy.contains("Other Categories").click();
-    cy.findByText("Starts with").click();
+    cy.contains("Text or Category").click();
+    cy.findByText("Dropdown").click();
 
     // connect it to people.name and product.category
     // (this doesn't make sense to do, but it illustrates the feature)
@@ -75,7 +75,7 @@ describe("scenarios > dashboard > parameters", () => {
     cy.contains("You're editing this dashboard.").should("not.exist");
 
     // confirm that typing searches both fields
-    cy.contains("Category").click();
+    cy.contains("Text").click();
 
     // After typing "Ga", you should see this name
     popover()
@@ -150,6 +150,50 @@ describe("scenarios > dashboard > parameters", () => {
     cy.url().should("include", "between=3&between=4");
   });
 
+  it("should not search field for results non-exact parameter string operators", () => {
+    cy.visit("/dashboard/1");
+
+    // Add a filter tied to a field that triggers a search for field values
+    cy.icon("pencil").click();
+    cy.icon("filter").click();
+    cy.findByText("Text or Category").click();
+    cy.findByText("Starts with").click();
+
+    // Link that filter to the card
+    cy.findByText("Select…").click();
+    popover().within(() => {
+      cy.findByText("Name").click();
+    });
+
+    // Add a filter with few enough values that it does not search
+    cy.icon("filter").click();
+    cy.findByText("Text or Category").click();
+    cy.findByText("Ends with").click();
+
+    // Link that filter to the card
+    cy.findByText("Select…").click();
+    popover().within(() => {
+      cy.findByText("Category").click();
+    });
+
+    cy.findByText("Save").click();
+    cy.findByText("You're editing this dashboard.").should("not.exist");
+
+    cy.contains("Text starts with").click();
+    cy.findByPlaceholderText("Enter some text")
+      .click()
+      .type("Corbin");
+    cy.findByText("Corbin Mertz").should("not.exist");
+    cy.findByText("Add filter").click();
+
+    cy.contains("Text ends with").click();
+    cy.findByPlaceholderText("Enter some text")
+      .click()
+      .type("dget");
+    cy.findByText("Widget").should("not.exist");
+    cy.findByText("Add filter").click();
+  });
+
   it("should remove previously deleted dashboard parameter from URL (metabase#10829)", () => {
     // Mirrored issue in metabase-enterprise#275
 
@@ -159,7 +203,7 @@ describe("scenarios > dashboard > parameters", () => {
     // Add filter and save dashboard
     cy.icon("pencil").click();
     cy.icon("filter").click();
-    cy.contains("Other Categories").click();
+    cy.contains("Text or Category").click();
     cy.contains("Ends with").click();
 
     // map the parameter to the Category field
@@ -171,7 +215,7 @@ describe("scenarios > dashboard > parameters", () => {
     cy.contains("You're editing this dashboard.").should("not.exist");
 
     // populate the filter input
-    cy.findByText("Category ends with").click();
+    cy.findByText("Text ends with").click();
     popover()
       .find("input")
       .type("zmo");
@@ -183,14 +227,14 @@ describe("scenarios > dashboard > parameters", () => {
     cy.log(
       "**URL is updated correctly with the given parameter at this point**",
     );
-    cy.url().should("include", "category_ends_with=zmo");
+    cy.url().should("include", "text_ends_with=zmo");
 
     // Remove filter name
     cy.icon("pencil").click();
     cy.get(".Dashboard")
       .find(".Icon-gear")
       .click();
-    cy.findByDisplayValue("Category ends with")
+    cy.findByDisplayValue("Text ends with")
       .click()
       .clear();
     cy.findByText("Save").click();

@@ -25,6 +25,8 @@ import { DATETIME_UNITS, formatBucketing } from "metabase/lib/query_time";
 import type Aggregation from "./queries/structured/Aggregation";
 import StructuredQuery from "./queries/StructuredQuery";
 
+import { infer, MONOTYPE } from "metabase/lib/expressions/typeinferencer";
+
 /**
  * A dimension option returned by the query_metadata API
  */
@@ -102,15 +104,9 @@ export default class Dimension {
    */
   static isEqual(a: ?Dimension | ConcreteField, b: ?Dimension): boolean {
     const dimensionA: ?Dimension =
-      a instanceof Dimension
-        ? a
-        : // $FlowFixMe
-          Dimension.parseMBQL(a);
+      a instanceof Dimension ? a : Dimension.parseMBQL(a);
     const dimensionB: ?Dimension =
-      b instanceof Dimension
-        ? b
-        : // $FlowFixMe
-          Dimension.parseMBQL(b);
+      b instanceof Dimension ? b : Dimension.parseMBQL(b);
     return !!dimensionA && !!dimensionB && dimensionA.isEqual(dimensionB);
   }
 
@@ -655,7 +651,7 @@ export class FieldDimension extends Dimension {
   // no idea what this does or if it's even used anywhere.
   foreign(dimension: Dimension): FieldDimension {
     if (isFieldDimension(dimension)) {
-      return dimension.withOptions({ "source-field": this._fieldIdOrName });
+      return dimension.withSourceField(this._fieldIdOrName);
     }
   }
   columnName() {
@@ -681,7 +677,7 @@ export class FieldDimension extends Dimension {
 
     // honestly, I have no idea why we do something totally random if we have a FK source field compared to everything
     // else, but that's how the tests are written
-    if (this.getOption("source-field")) {
+    if (this.sourceField()) {
       return this.displayName();
     }
     return "Default";
@@ -722,8 +718,19 @@ export class FieldDimension extends Dimension {
     );
   }
 
-  dimensions(): FieldDimension[] {
-    let dimensions = super.dimensions();
+  dimensions(DimensionTypes?: typeof Dimension[]): FieldDimension[] {
+    let dimensions = super.dimensions(DimensionTypes);
+
+    const joinAlias = this.joinAlias();
+    if (joinAlias) {
+      return dimensions.map(d => d.withJoinAlias(joinAlias));
+    }
+
+    const sourceField = this.sourceField();
+    if (sourceField) {
+      return dimensions.map(d => d.withSourceField(sourceField));
+    }
+
     const field = this.field();
 
     // Add FK dimensions if this field is an FK
@@ -741,7 +748,7 @@ export class FieldDimension extends Dimension {
     }
 
     // Add temporal dimensions
-    if (field.isDate()) {
+    if (field.isDate() && !this.isIntegerFieldId()) {
       const temporalDimensions = DATETIME_UNITS.map(unit =>
         this.withTemporalUnit(unit),
       );
@@ -756,7 +763,24 @@ export class FieldDimension extends Dimension {
     if (field && field.isDate()) {
       return this.withTemporalUnit(field.getDefaultDateTimeUnit());
     }
-    return super.defaultDimension(dimensionTypes);
+
+    let dimension = super.defaultDimension(dimensionTypes);
+
+    if (!dimension) {
+      return null;
+    }
+
+    const sourceField = this.sourceField();
+    if (sourceField) {
+      dimension = dimension.withSourceField(sourceField);
+    }
+
+    const joinAlias = this.joinAlias();
+    if (joinAlias) {
+      dimension = dimension.withJoinAlias(joinAlias);
+    }
+
+    return dimension;
   }
 
   _dimensionForOption(option): FieldDimension {
@@ -843,8 +867,8 @@ export class FieldDimension extends Dimension {
 
   column(extra = {}) {
     const more = {};
-    if (typeof this.getOption("source-field") === "number") {
-      more.fk_field_id = this.getOption("source-field");
+    if (typeof this.sourceField() === "number") {
+      more.fk_field_id = this.sourceField();
     }
     if (this.temporalUnit()) {
       more.unit = this.temporalUnit();
@@ -861,7 +885,7 @@ export class FieldDimension extends Dimension {
    * For `:field` clauses with an FK source field, returns a new Dimension for the source field.
    */
   fk() {
-    const sourceFieldIdOrName = this.getOption("source-field");
+    const sourceFieldIdOrName = this.sourceField();
     if (!sourceFieldIdOrName) {
       return null;
     }
@@ -894,6 +918,14 @@ export class FieldDimension extends Dimension {
    */
   isTemporalTruncation(): boolean {
     return this.temporalUnit() && !this.isTemporalExtraction();
+  }
+
+  sourceField() {
+    return this.getOption("source-field");
+  }
+
+  withSourceField(sourceField) {
+    return this.withOptions({ "source-field": sourceField });
   }
 
   /**
@@ -971,20 +1003,61 @@ export class ExpressionDimension extends Dimension {
   }
 
   field() {
+    const query = this._query;
+    const table = query ? query.table() : null;
+
+    let type = MONOTYPE.Number; // fallback
+    if (query) {
+      const datasetQuery = query.query();
+      const expressions = datasetQuery ? datasetQuery.expressions : {};
+      const env = mbql => {
+        const dimension = Dimension.parseMBQL(
+          mbql,
+          this._metadata,
+          this._query,
+        );
+        return dimension.field().base_type;
+      };
+      type = infer(expressions[this.name()], env);
+    } else {
+      type = infer(this._args[0]);
+    }
+
+    let base_type = type;
+    if (!type.startsWith("type/")) {
+      base_type = "type/Float"; // fallback
+      switch (type) {
+        case MONOTYPE.String:
+          base_type = "type/Text";
+          break;
+        case MONOTYPE.Boolean:
+          base_type = "type/Boolean";
+          break;
+        default:
+          break;
+      }
+    }
+
     return new Field({
       id: this.mbql(),
       name: this.name(),
       display_name: this.displayName(),
       semantic_type: null,
-      base_type: "type/Float",
-      // HACK: need to thread the query through to this fake Field
-      query: this._query,
-      table: this._query ? this._query.table() : null,
+      base_type,
+      query,
+      table,
     });
   }
 
   icon(): IconName {
-    // TODO: eventually will need to get the type from the return type of the expression
+    const { base_type } = this.field();
+    switch (base_type) {
+      case "type/Text":
+        return "string";
+      default:
+        break;
+    }
+
     return "int";
   }
 }

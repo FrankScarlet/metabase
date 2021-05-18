@@ -4,8 +4,8 @@ import {
   modal,
   popover,
   openOrdersTable,
-} from "__support__/cypress";
-import { USERS, USER_GROUPS } from "__support__/cypress_data";
+} from "__support__/e2e/cypress";
+import { USERS, USER_GROUPS } from "__support__/e2e/cypress_data";
 
 const { nocollection } = USERS;
 const { DATA_GROUP } = USER_GROUPS;
@@ -158,6 +158,20 @@ describe("scenarios > collection_defaults", () => {
           // 2. Ensure we can see the entire "Fifth level with a long name" collection text
           cy.findByText("Fifth collection with a very long name");
         });
+      });
+    });
+
+    describe("archive", () => {
+      it("should show archived items (metabase#15080)", () => {
+        cy.visit("collection/root");
+        openEllipsisMenuFor("Orders");
+        cy.findByText("Archive this item").click();
+        cy.findByText("Archived question")
+          .siblings(".Icon-close")
+          .click();
+        cy.findByText("View archive").click();
+        cy.location("pathname").should("eq", "/archive");
+        cy.findByText("Orders");
       });
     });
 
@@ -447,11 +461,32 @@ describe("scenarios > collection_defaults", () => {
       cy.findByText("Orders");
     });
 
-    it.skip("collections without sub-collections shouldn't have chevron icon (metabase#14753)", () => {
+    it("collections without sub-collections shouldn't have chevron icon (metabase#14753)", () => {
       cy.visit("/collection/root");
-      cy.findByText("Your personal collection")
+      cy.findByTestId("sidebar")
+        .as("sidebar")
+        .findByText("Your personal collection")
         .parent()
         .find(".Icon-chevronright")
+        .should("not.exist");
+
+      // Ensure if sub-collection is archived, the chevron is not displayed
+      cy.get("@sidebar")
+        .findByText("First collection")
+        .click()
+        .findByText("Second collection")
+        .click();
+      cy.icon("pencil").click();
+      popover()
+        .findByText("Archive this collection")
+        .click();
+      cy.get(".Modal")
+        .findByRole("button", { name: "Archive" })
+        .click();
+      cy.get("@sidebar")
+        .findByText("First collection")
+        .parent()
+        .find(".Icon-chevrondown")
         .should("not.exist");
     });
 
@@ -477,13 +512,20 @@ describe("scenarios > collection_defaults", () => {
       cy.findByText("First Collection");
     });
 
-    it.skip("should let be possible to select all items using checkbox (metabase#14705)", () => {
+    it("should be possible to apply bulk selection to items (metabase#14705)", () => {
       cy.visit("/collection/root");
       selectItemUsingCheckbox("Orders");
       cy.findByText("1 item selected").should("be.visible");
+      // Select all
       cy.icon("dash").click();
       cy.icon("dash").should("not.exist");
       cy.findByText("4 items selected");
+      // Deselect all
+      cy.findByTestId("bulk-action-bar").within(() => {
+        cy.icon("check").click();
+      });
+      cy.icon("check").should("not.exist");
+      cy.findByTestId("bulk-action-bar").should("not.be.visible");
     });
 
     it.skip("should be possible to select pinned item using checkbox (metabase#15338)", () => {

@@ -1,5 +1,5 @@
-import { restore, popover, modal } from "__support__/cypress";
-import { USERS } from "__support__/cypress_data";
+import { restore, popover, modal } from "__support__/e2e/cypress";
+import { USERS } from "__support__/e2e/cypress_data";
 
 describe("personal collections", () => {
   beforeEach(() => {
@@ -106,7 +106,7 @@ describe("personal collections", () => {
           popover()
             .findByText("My personal collection") /* [3] */
             .click();
-          cy.findByRole("button", { name: "Update" }).click();
+          cy.button("Update").click();
           // Clicking on "Foo" would've closed it and would hide its sub-collections (if there were any).
           // By doing this, we're making sure "Bar" lives at the same level as "Foo"
           cy.get("@sidebar")
@@ -115,7 +115,7 @@ describe("personal collections", () => {
           cy.get("@sidebar").findByText("Bar1");
         });
 
-        it.skip("should be able to archive collection(s) inside personal collection (metabase#15343)", () => {
+        it("should be able to archive collection(s) inside personal collection (metabase#15343)", () => {
           cy.icon("pencil").click();
           cy.findByText("Archive this collection").click();
           modal()

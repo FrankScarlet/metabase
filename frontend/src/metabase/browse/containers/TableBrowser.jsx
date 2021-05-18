@@ -9,7 +9,9 @@ import { getMetadata } from "metabase/selectors/metadata";
 
 import Table from "metabase/entities/tables";
 
+import { SAVED_QUESTIONS_VIRTUAL_DB_ID } from "metabase/lib/constants";
 import { color } from "metabase/lib/colors";
+import * as Urls from "metabase/lib/urls";
 
 import Card from "metabase/components/Card";
 import Database from "metabase/entities/databases";
@@ -25,18 +27,27 @@ function TableBrowser(props) {
   const {
     tables,
     metadata,
-    params: { dbId, schemaName },
+    dbId,
+    schemaName,
     showSchemaInHeader = true,
   } = props;
+
+  const databaseCrumb =
+    dbId === SAVED_QUESTIONS_VIRTUAL_DB_ID
+      ? {
+          title: t`Saved Questions`,
+          to: Urls.browseDatabase({ id: SAVED_QUESTIONS_VIRTUAL_DB_ID }),
+        }
+      : {
+          title: <Database.Link id={dbId} />,
+        };
+
   return (
     <Box>
       <BrowseHeader
         crumbs={[
           { title: t`Our data`, to: "browse" },
-          {
-            title: <Database.Name id={dbId} />,
-            to: `browse/${dbId}`,
-          },
+          databaseCrumb,
           showSchemaInHeader && { title: schemaName },
         ]}
       />
@@ -63,37 +74,39 @@ function TableBrowser(props) {
                     name={table.display_name || table.name}
                     iconName="table"
                     iconColor={color("accent2")}
-                    buttons={[
-                      props.xraysEnabled && (
+                    buttons={
+                      <React.Fragment>
+                        {props.xraysEnabled && (
+                          <Link
+                            to={`auto/dashboard/table/${table.id}`}
+                            data-metabase-event={`${ANALYTICS_CONTEXT};Table Item;X-ray Click`}
+                            className="link--icon ml1"
+                          >
+                            <Icon
+                              key="xray"
+                              tooltip={t`X-ray this table`}
+                              name="bolt"
+                              color={color("warning")}
+                              size={20}
+                              className="hover-child"
+                            />
+                          </Link>
+                        )}
                         <Link
-                          to={`auto/dashboard/table/${table.id}`}
-                          data-metabase-event={`${ANALYTICS_CONTEXT};Table Item;X-ray Click`}
+                          to={`reference/databases/${dbId}/tables/${table.id}`}
+                          data-metabase-event={`${ANALYTICS_CONTEXT};Table Item;Reference Click`}
                           className="link--icon ml1"
                         >
                           <Icon
-                            key="xray"
-                            tooltip={t`X-ray this table`}
-                            name="bolt"
-                            color={color("warning")}
-                            size={20}
+                            key="reference"
+                            tooltip={t`Learn about this table`}
+                            name="reference"
+                            color={color("text-medium")}
                             className="hover-child"
                           />
                         </Link>
-                      ),
-                      <Link
-                        to={`reference/databases/${dbId}/tables/${table.id}`}
-                        data-metabase-event={`${ANALYTICS_CONTEXT};Table Item;Reference Click`}
-                        className="link--icon ml1"
-                      >
-                        <Icon
-                          key="reference"
-                          tooltip={t`Learn about this table`}
-                          name="reference"
-                          color={color("text-medium")}
-                          className="hover-child"
-                        />
-                      </Link>,
-                    ]}
+                      </React.Fragment>
+                    }
                   />
                 </Link>
               </Card>
@@ -106,7 +119,7 @@ function TableBrowser(props) {
 }
 
 export default Table.loadList({
-  query: (state, { params: { dbId, schemaName } }) => ({
+  query: (state, { dbId, schemaName }) => ({
     dbId,
     schemaName,
   }),

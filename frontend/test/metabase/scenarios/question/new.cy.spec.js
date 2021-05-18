@@ -4,9 +4,9 @@ import {
   popover,
   openOrdersTable,
   openReviewsTable,
-} from "__support__/cypress";
+} from "__support__/e2e/cypress";
 
-import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
 const { ORDERS, ORDERS_ID } = SAMPLE_DATASET;
 
@@ -18,6 +18,63 @@ describe("scenarios > question > new", () => {
     cy.signInAsAdmin();
   });
 
+  it("data selector popover should not be too small (metabase#15591)", () => {
+    // Add 10 more databases
+    for (let i = 0; i < 10; i++) {
+      cy.request("POST", "/api/database", {
+        engine: "h2",
+        name: "Sample" + i,
+        details: {
+          db:
+            "zip:./target/uberjar/metabase.jar!/sample-dataset.db;USER=GUEST;PASSWORD=guest",
+        },
+        auto_run_queries: false,
+        is_full_sync: false,
+        schedules: {},
+      });
+    }
+
+    // First test UI for Simple question
+    cy.visit("/question/new");
+    cy.findByText("Simple question").click();
+    cy.findByText("Pick your data");
+    cy.findByText("Sample3").isVisibleInPopover();
+
+    // Then move to the Custom question UI
+    cy.visit("/question/new");
+    cy.findByText("Custom question").click();
+    cy.findByText("Sample3").isVisibleInPopover();
+  });
+
+  it("binning on values from joined table should work (metabase#15648)", () => {
+    // Simple question
+    openOrdersTable();
+    cy.findByText("Summarize").click();
+    cy.findByText("Group by")
+      .parent()
+      .findByText("Rating")
+      .click();
+    cy.get(".Visualization .bar").should("have.length", 6);
+
+    // Custom question ("Notebook")
+    openOrdersTable({ mode: "notebook" });
+    cy.findByText("Summarize").click();
+    cy.findByText("Count of rows").click();
+    cy.findByText("Pick a column to group by").click();
+    popover().within(() => {
+      // Close expanded "Orders" section in order to bring everything else into view
+      cy.get(".List-section-title")
+        .contains(/Orders?/)
+        .click();
+      cy.get(".List-section-title")
+        .contains(/Products?/)
+        .click();
+      cy.findByText("Rating").click();
+    });
+    cy.button("Visualize").click();
+    cy.get(".Visualization .bar").should("have.length", 6);
+  });
+
   describe("browse data", () => {
     it("should load orders table and summarize", () => {
       cy.visit("/");
@@ -25,6 +82,59 @@ describe("scenarios > question > new", () => {
       cy.contains("Sample Dataset").click();
       cy.contains("Orders").click();
       cy.contains("37.65");
+    });
+  });
+
+  describe("data picker search", () => {
+    beforeEach(() => {
+      cy.visit("/");
+      cy.findByText("Ask a question").click();
+    });
+
+    describe("on a (simple) question page", () => {
+      beforeEach(() => {
+        cy.findByText("Simple question").click();
+        cy.findByPlaceholderText("Search for a table...").type("Ord");
+      });
+
+      it("should allow to search saved questions", () => {
+        cy.findByText("Orders, Count").click();
+        cy.findByText("18,760");
+      });
+
+      it("should allow to search and select tables", () => {
+        cy.findAllByText("Orders")
+          .closest("li")
+          .findByText("Table in")
+          .click();
+        cy.url().should("include", "question#");
+        cy.findByText("Sample Dataset");
+        cy.findByText("Orders");
+      });
+    });
+
+    describe("on a (custom) question page", () => {
+      beforeEach(() => {
+        cy.findByText("Custom question").click();
+        cy.findByPlaceholderText("Search for a table...").type("Ord");
+      });
+
+      it("should allow to search saved questions", () => {
+        cy.findByText("Orders, Count").click();
+        cy.findByText("Visualize").click();
+        cy.findByText("18,760");
+      });
+
+      it("should allow to search and select tables", () => {
+        cy.findAllByText("Orders")
+          .closest("li")
+          .findByText("Table in")
+          .click();
+        cy.findByText("Visualize").click();
+        cy.url().should("include", "question#");
+        cy.findByText("Sample Dataset");
+        cy.findByText("Orders");
+      });
     });
   });
 
@@ -160,7 +270,7 @@ describe("scenarios > question > new", () => {
             .click();
         });
       // this step is maybe redundant since it fails to even find "by month"
-      cy.findByText("Hour of day");
+      cy.findByText("Hour of Day");
     });
 
     it.skip("should display timeseries filter and granularity widgets at the bottom of the screen (metabase#11183)", () => {
@@ -212,7 +322,7 @@ describe("scenarios > question > new", () => {
         cy.findByPlaceholderText("Name (required)").type("twice max total");
         cy.findByText("Done").click();
       });
-      cy.findByText("Visualize").click();
+      cy.button("Visualize").click();
       cy.findByText("318.7");
     });
 

@@ -1,5 +1,5 @@
-import { restore } from "__support__/cypress";
-import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
+import { restore } from "__support__/e2e/cypress";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
 const { ORDERS, ORDERS_ID, PRODUCTS, PRODUCTS_ID } = SAMPLE_DATASET;
 
@@ -73,6 +73,35 @@ describe("scenarios > x-rays", () => {
         "A closer look at number of Orders where Created At is in March 2018 and Category is Gadget",
       );
       cy.icon("warning").should("not.exist");
+    });
+  });
+
+  ["X-ray", "Compare to the rest"].forEach(action => {
+    it.skip(`"${action.toUpperCase()}" should work on a nested question made from base native question (metabase#15655)`, () => {
+      cy.intercept("GET", "/api/automagic-dashboards/**").as("xray");
+      cy.createNativeQuestion({
+        name: "15655",
+        native: { query: "select * from people" },
+      });
+
+      cy.visit("/question/new");
+      cy.findByText("Simple question").click();
+      cy.findByText("Saved Questions").click();
+      cy.findByText("15655").click();
+      cy.findByText("Summarize").click();
+      cy.get(".List-item-title")
+        .contains(/Source/i)
+        .click();
+      cy.get(".bar")
+        .first()
+        .click({ force: true });
+      cy.findByText(action).click();
+      cy.wait("@xray").then(xhr => {
+        expect(xhr.response.body.cause).not.to.exist;
+        expect(xhr.response.statusCode).not.to.eq(500);
+      });
+      cy.findByText("A look at the number of People");
+      cy.get(".DashCard");
     });
   });
 });

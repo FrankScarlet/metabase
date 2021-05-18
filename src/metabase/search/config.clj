@@ -2,14 +2,15 @@
   (:require [cheshire.core :as json]
             [clojure.string :as str]
             [honeysql.core :as hsql]
-            [metabase.models :refer [Card Collection Dashboard Metric Pulse Segment Table]]
+            [metabase.models :refer [Card Collection Dashboard Database Metric Pulse Segment Table]]
             [metabase.models.setting :refer [defsetting]]
             [metabase.util.i18n :refer [deferred-tru]]))
 
 (defsetting search-typeahead-enabled
   (deferred-tru "Enable typeahead search in the Metabase navbar?")
-  :type    :boolean
-  :default true)
+  :type       :boolean
+  :default    true
+  :visibility :authenticated)
 
 (def ^:dynamic db-max-results
   "Number of raw results to fetch from the database. This number is in place to prevent massive application DB load by
@@ -21,7 +22,7 @@
 
 (def ^:const max-filtered-results
   "Number of results to return in an API response"
-  50)
+  1000)
 
 (def ^:const stale-time-in-days
   "Results older than this number of days are all considered to be equally old. In other words, there is a ranking
@@ -39,12 +40,17 @@
 (def searchable-models
   "Models that can be searched. The order of this list also influences the order of the results: items earlier in the
   list will be ranked higher."
-  [Dashboard Metric Segment Card Collection Table Pulse])
+  [Dashboard Metric Segment Card Collection Table Pulse Database])
 
 (defn model-name->class
   "Given a model name as a string, return its Class."
   [model-name]
   (Class/forName (format "metabase.models.%s.%sInstance" model-name (str/capitalize model-name))))
+
+(defn model-name->instance
+  "Given a model name as a string, return the specific instance"
+  [model-name]
+  (first (filter (fn [x] (= (str/capitalize model-name) (:name x))) searchable-models)))
 
 (defn- ->class
   [class-or-instance]
@@ -54,7 +60,7 @@
 
 (def ^:const displayed-columns
   "All of the result components that by default are displayed by the frontend."
-  #{:name :display_name :collection_name})
+  #{:name :display_name :collection_name :description})
 
 (defmulti searchable-columns-for-model
   "The columns that will be searched for the query."
@@ -72,6 +78,11 @@
    :description])
 
 (defmethod searchable-columns-for-model (class Dashboard)
+  [_]
+  [:name
+   :description])
+
+(defmethod searchable-columns-for-model (class Database)
   [_]
   [:name
    :description])
@@ -117,6 +128,10 @@
 (defmethod columns-for-model (class Dashboard)
   [_]
   (conj default-columns :collection_id :collection_position [:collection.name :collection_name] favorite-col))
+
+(defmethod columns-for-model (class Database)
+  [_]
+  [:id :name :description :updated_at])
 
 (defmethod columns-for-model (class Pulse)
   [_]

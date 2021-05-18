@@ -33,7 +33,7 @@ import { syncTableColumnsToQuery } from "metabase/lib/dataset";
 import { getParametersWithExtras, isTransientId } from "metabase/meta/Card";
 import {
   parameterToMBQLFilter,
-  mapUIParameterToQueryParameter,
+  normalizeParameterValue,
 } from "metabase/meta/Parameter";
 import {
   aggregate,
@@ -155,7 +155,6 @@ export default class Question {
     visualization_settings?: VisualizationSettings,
     dataset_query?: DatasetQuery,
   } = {}) {
-    // $FlowFixMe
     let card: CardObject = {
       name,
       display,
@@ -732,7 +731,7 @@ export default class Question {
     ) {
       return Urls.question(null, this._serializeForUrl({ clean }), query);
     } else {
-      return Urls.question(this.id(), "", query);
+      return Urls.question(this.card(), "", query);
     }
   }
 
@@ -828,7 +827,11 @@ export default class Question {
       // only the superset of parameters object that API expects
       .map(param => _.pick(param, "type", "target", "value"))
       .map(({ type, value, target }) => {
-        return mapUIParameterToQueryParameter(type, value, target);
+        return {
+          type,
+          value: normalizeParameterValue(type, value),
+          target,
+        };
       });
 
     if (canUseCardApiEndpoint) {
@@ -905,7 +908,6 @@ export default class Question {
   }
 
   parametersList(): ParameterObject[] {
-    // $FlowFixMe
     return (Object.values(this.parameters()): ParameterObject[]);
   }
 

@@ -84,6 +84,7 @@ type Props = {
   minWidth?: number,
   optionsMaxHeight?: Number,
   alwaysShowOptions?: boolean,
+  disableSearch?: boolean,
 
   dashboard?: DashboardWithCards,
   parameter?: Parameter,
@@ -121,6 +122,7 @@ export class FieldValuesWidget extends Component {
     style: {},
     formatOptions: {},
     maxWidth: 500,
+    disableSearch: false,
   };
 
   // if [dashboard] parameter ID is specified use the fancy new Chain Filter API endpoints to fetch parameter values.
@@ -173,7 +175,10 @@ export class FieldValuesWidget extends Component {
   }
 
   shouldList() {
-    return this.props.fields.every(field => field.has_field_values === "list");
+    return (
+      !this.props.disableSearch &&
+      this.props.fields.every(field => field.has_field_values === "list")
+    );
   }
 
   hasList() {
@@ -188,8 +193,9 @@ export class FieldValuesWidget extends Component {
   }
 
   isSearchable() {
-    const { fields } = this.props;
+    const { fields, disableSearch } = this.props;
     return (
+      !disableSearch &&
       // search is available if:
       // all fields have a valid search field
       fields.every(this.searchField) &&
@@ -248,7 +254,6 @@ export class FieldValuesWidget extends Component {
               {
                 value,
                 fieldId: field.id,
-                // $FlowFixMe all fields have a search field if we're searching
                 searchFieldId: this.searchField(field).id,
                 limit: this.props.maxResults,
               },
@@ -264,7 +269,6 @@ export class FieldValuesWidget extends Component {
     if (this.showRemapping()) {
       const [field] = fields;
       if (field.remappedField() === this.searchField(field)) {
-        // $FlowFixMe
         this.props.addRemappings(field.id, results);
       }
     }
@@ -297,7 +301,6 @@ export class FieldValuesWidget extends Component {
     this._searchDebounced(value);
   };
 
-  // $FlowFixMe
   _searchDebounced = _.debounce(async (value): void => {
     this.setState({
       loadingState: "LOADING",
@@ -351,7 +354,6 @@ export class FieldValuesWidget extends Component {
         if (loadingState === "LOADING") {
           return <LoadingState />;
         } else if (loadingState === "LOADED") {
-          // $FlowFixMe all fields have a search field if this.isSearchable()
           return <NoMatchState fields={fields.map(this.searchField)} />;
         }
       }
@@ -367,7 +369,6 @@ export class FieldValuesWidget extends Component {
         maximumFractionDigits={20}
         remap={this.showRemapping()}
         {...formatOptions}
-        // $FlowFixMe
         {...options}
       />
     );
@@ -394,13 +395,11 @@ export class FieldValuesWidget extends Component {
         placeholder = t`Search the list`;
       } else if (this.isSearchable()) {
         const names = new Set(
-          // $FlowFixMe all fields have a search field if this.isSearchable()
           fields.map(field => stripId(this.searchField(field).display_name)),
         );
         if (names.size > 1) {
           placeholder = t`Search`;
         } else {
-          // $FlowFixMe
           const [name] = names;
           placeholder = t`Search by ${name}`;
           if (field.isID() && field !== this.searchField(field)) {
@@ -456,7 +455,6 @@ export class FieldValuesWidget extends Component {
           }
           // end forwarded props
           options={options}
-          // $FlowFixMe
           valueKey={0}
           valueRenderer={value =>
             this.renderValue(value, { autoLoad: true, compact: false })
@@ -505,7 +503,6 @@ export class FieldValuesWidget extends Component {
 }
 
 function dedupeValues(valuesList) {
-  // $FlowFixMe
   const uniqueValueMap = new Map(valuesList.flat().map(o => [o[0], o]));
   return Array.from(uniqueValueMap.values());
 }

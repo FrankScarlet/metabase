@@ -1,7 +1,5 @@
 ((nil . ((indent-tabs-mode . nil)       ; always use spaces for tabs
-         (require-final-newline . t)    ; add final newline on save
-         (cider-shadow-default-options . "node-repl")
-         (cider-default-cljs-repl . shadow)))
+         (require-final-newline . t)))  ; add final newline on save
  (js2-mode . ((js2-mode-show-parse-errors . nil)      ; these settings will let flycheck do everything through eslint,
               (js2-mode-show-strict-warnings . nil))) ; because js2-mode can't handle flowtype
  (clojure-mode . ((eval . (progn
@@ -19,13 +17,17 @@
                             ;; Define custom indentation for functions inside metabase.
                             ;; This list isn't complete; add more forms as we come across them.
                             (define-clojure-indent
+                              (db/insert-many! 1)
                               (let-404)
                               (macros/case 0)
                               (match 1)
                               (mbql.match/match 1)
+                              (mt/test-drivers 1)
+                              (mt/query 1)
                               (mbql.match/match-one 1)
                               (mbql.match/replace 1)
                               (mbql.match/replace-in 2)
+                              (impl/test-migrations 2)
                               (l/matche '(1 (:defn)))
                               (l/matcha '(1 (:defn)))
                               (p/defprotocol+ '(1 (:defn)))

@@ -14,6 +14,8 @@
                                      PulseChannelRecipient Table ViewLog]]
             [metabase.models.permissions :as perms]
             [metabase.models.permissions-group :as perms-group]
+            [metabase.models.revision :as revision :refer [Revision]]
+            [metabase.models.user :refer [User]]
             [metabase.query-processor :as qp]
             [metabase.query-processor.async :as qp.async]
             [metabase.query-processor.middleware.constraints :as constraints]
@@ -293,6 +295,8 @@
                        :can_write              true
                        :dashboard_count        0
                        :result_metadata        true
+                       :last-edit-info         {:timestamp true :id true :first_name "Rasta"
+                                                :last_name "Toucan" :email "rasta@metabase.com"}
                        :creator                (merge
                                                 (select-keys (mt/fetch-user :rasta) [:id :date_joined :last_login :locale])
                                                 {:common_name  "Rasta Toucan"
@@ -308,7 +312,11 @@
                          (update :dataset_query map?)
                          (update :collection map?)
                          (update :result_metadata (partial every? map?))
-                         (update :creator dissoc :is_qbnewb)))))))))))
+                         (update :creator dissoc :is_qbnewb)
+                         (update :last-edit-info (fn [edit-info]
+                                                   (-> edit-info
+                                                       (update :id boolean)
+                                                       (update :timestamp boolean))))))))))))))
 
 (deftest save-empty-card-test
   (testing "POST /api/card"
@@ -344,8 +352,7 @@
     (mt/with-non-admin-groups-no-root-collection-perms
       (let [metadata  [{:base_type    :type/Integer
                         :display_name "Count Chocula"
-                        :name         "count_chocula"
-                        :semantic_type :type/Number}]
+                        :name         "count_chocula"}]
             card-name (mt/random-name)]
         (mt/with-temp Collection [collection]
           (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection)
@@ -358,8 +365,7 @@
             ;; now check the metadata that was saved in the DB
             (is (= [{:base_type    :type/Integer
                      :display_name "Count Chocula"
-                     :name         "count_chocula"
-                     :semantic_type :type/Number}]
+                     :name         "count_chocula"}]
                    (db/select-one-field :result_metadata Card :name card-name)))))))))
 
 (deftest save-card-with-empty-result-metadata-test
@@ -391,9 +397,8 @@
     (let [metadata  [{:base_type    :type/Integer
                       :display_name "Count Chocula"
                       :name         "count_chocula"
-                      :semantic_type :type/Number
                       :fingerprint  {:global {:distinct-count 285},
-                                     :type {:type/Number {:min 5, :max 2384, :avg 1000.2}}}}]
+                                     :type   {:type/Number {:min 5, :max 2384, :avg 1000.2}}}}]
           card-name (mt/random-name)]
       (mt/with-temp Collection [collection]
         (perms/grant-collection-readwrite-permissions! (perms-group/all-users) collection)
@@ -406,12 +411,11 @@
                                          :result_metadata    (map fingerprint-integers->doubles metadata)
                                          :metadata_checksum  (#'results-metadata/metadata-checksum metadata)))
             (testing "check the metadata that was saved in the DB"
-              (is (= [{:base_type    :type/Integer
-                       :display_name "Count Chocula"
-                       :name         "count_chocula"
-                       :semantic_type :type/Number
-                       :fingerprint  {:global {:distinct-count 285},
-                                      :type   {:type/Number {:min 5.0, :max 2384.0, :avg 1000.2}}}}]
+              (is (= [{:base_type     :type/Integer
+                       :display_name  "Count Chocula"
+                       :name          "count_chocula"
+                       :fingerprint   {:global {:distinct-count 285},
+                                       :type   {:type/Number {:min 5.0, :max 2384.0, :avg 1000.2}}}}]
                      (db/select-one-field :result_metadata Card :name card-name))))))))))
 
 (deftest saving-card-fetches-correct-metadata
@@ -584,7 +588,17 @@
                    :collection_id          (u/the-id collection)
                    :collection             (into {} collection)
                    :result_metadata        (mt/obj->json->obj (:result_metadata card))})
-                 (mt/user-http-request :rasta :get 200 (str "card/" (u/the-id card))))))))))
+                 (mt/user-http-request :rasta :get 200 (str "card/" (u/the-id card))))))
+        (testing "Card should include last edit info if available"
+          (mt/with-temp* [User     [{user-id :id} {:first_name "Test" :last_name "User" :email "user@test.com"}]
+                          Revision [_ {:model "Card"
+                                       :model_id (:id card)
+                                       :user_id user-id
+                                       :object (revision/serialize-instance card (:id card) card)}]]
+            (is (= {:id true :email "user@test.com" :first_name "Test" :last_name "User" :timestamp true}
+                   (-> (mt/user-http-request :rasta :get 200 (str "card/" (u/the-id card)))
+                       mt/boolean-ids-and-timestamps
+                       :last-edit-info)))))))))
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                                UPDATING A CARD                                                 |
@@ -600,7 +614,10 @@
     (with-cards-in-writeable-collection card
       (is (= "Original Name"
              (db/select-one-field :name Card, :id (u/the-id card))))
-      (mt/user-http-request :rasta :put 202 (str "card/" (u/the-id card)) {:name "Updated Name"})
+      (is (= {:timestamp true, :first_name "Rasta", :last_name "Toucan", :email "rasta@metabase.com", :id true}
+             (-> (mt/user-http-request :rasta :put 202 (str "card/" (u/the-id card)) {:name "Updated Name"})
+                 mt/boolean-ids-and-timestamps
+                 :last-edit-info)))
       (is (= "Updated Name"
              (db/select-one-field :name Card, :id (u/the-id card)))))))
 
@@ -664,8 +681,7 @@
 (deftest make-sure-when-updating-a-card-the-query-metadata-is-saved--if-correct-
   (let [metadata [{:base_type    :type/Integer
                    :display_name "Count Chocula"
-                   :name         "count_chocula"
-                   :semantic_type :type/Number}]]
+                   :name         "count_chocula"}]]
     (mt/with-temp Card [card]
       (with-cards-in-writeable-collection card
         ;; update the Card's query
@@ -676,8 +692,7 @@
         ;; now check the metadata that was saved in the DB
         (is (= [{:base_type    :type/Integer
                  :display_name "Count Chocula"
-                 :name         "count_chocula"
-                 :semantic_type :type/Number}]
+                 :name         "count_chocula"}]
                (db/select-one-field :result_metadata Card :id (u/the-id card))))))))
 
 (deftest make-sure-when-updating-a-card-the-correct-query-metadata-is-fetched--if-incorrect-

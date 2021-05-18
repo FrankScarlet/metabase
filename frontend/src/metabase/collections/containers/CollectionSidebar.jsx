@@ -46,9 +46,20 @@ class CollectionSidebar extends React.Component {
   state = {
     openCollections: [],
   };
+
+  componentDidMount() {
+    // an array to store the ancestors
+    const { collectionId, collections, loading } = this.props;
+    if (!loading) {
+      const ancestors = getParentPath(collections, collectionId) || [];
+      this.setState({ openCollections: ancestors });
+    }
+  }
+
   onOpen = id => {
     this.setState({ openCollections: this.state.openCollections.concat(id) });
   };
+
   onClose = id => {
     this.setState({
       openCollections: this.state.openCollections.filter(c => {
@@ -56,20 +67,16 @@ class CollectionSidebar extends React.Component {
       }),
     });
   };
-  componentDidMount() {
-    // an array to store the ancestors
-    const { collectionId, collections, loading } = this.props;
-    if (!loading) {
-      const ancestors = getParentPath(collections, Number(collectionId)) || [];
-      this.setState({ openCollections: ancestors });
-    }
-  }
+
+  // TODO Should we update the API to filter archived collections?
+  filterPersonalCollections = collection => !collection.archived;
+
   render() {
     const { currentUser, isRoot, collectionId, list } = this.props;
     return (
-      <Sidebar w={340} pt={3}>
+      <Sidebar w={340} pt={3} data-testid="sidebar">
         <CollectionLink
-          to={Urls.collection("root")}
+          to={Urls.collection({ id: "root" })}
           selected={isRoot}
           mb={1}
           mt={2}
@@ -94,6 +101,7 @@ class CollectionSidebar extends React.Component {
               onOpen={this.onOpen}
               collections={currentUserPersonalCollections(list, currentUser.id)}
               initialIcon="person"
+              filter={this.filterPersonalCollections}
               currentCollection={collectionId}
             />
           </Box>
@@ -103,7 +111,7 @@ class CollectionSidebar extends React.Component {
           {currentUser.is_superuser && (
             <Link
               my={2}
-              to={Urls.collection("users")}
+              to={Urls.collection({ id: "users" })}
               className="flex align-center text-bold text-light text-brand-hover"
             >
               <Icon name="group" mr={1} />

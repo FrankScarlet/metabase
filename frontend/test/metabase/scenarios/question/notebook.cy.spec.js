@@ -6,9 +6,9 @@ import {
   popover,
   modal,
   visitQuestionAdhoc,
-} from "__support__/cypress";
+} from "__support__/e2e/cypress";
 
-import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
 const {
   ORDERS,
@@ -37,7 +37,7 @@ describe("scenarios > question > notebook", () => {
     cy.findByText("Not now").click();
     // enter "notebook" and visualize without changing anything
     cy.icon("notebook").click();
-    cy.findByText("Visualize").click();
+    cy.button("Visualize").click();
 
     // there were no changes to the question, so we shouldn't have the option to "Save"
     cy.findByText("Save").should("not.exist");
@@ -99,7 +99,7 @@ describe("scenarios > question > notebook", () => {
       .click()
       .clear()
       .type("contains([Category])", { delay: 50 });
-    cy.findAllByRole("button", { name: "Done" })
+    cy.button("Done")
       .should("not.be.disabled")
       .click();
     cy.contains(/^Function contains expects 2 arguments/i);
@@ -125,7 +125,7 @@ describe("scenarios > question > notebook", () => {
       .click()
       .clear()
       .type("[Price] > 1");
-    cy.findAllByRole("button", { name: "Done" }).click();
+    cy.button("Done").click();
 
     // change the corresponding custom expression
     cy.findByText("Price is greater than 1").click();
@@ -177,9 +177,9 @@ describe("scenarios > question > notebook", () => {
     it("should allow post-join filters (metabase#12221)", () => {
       cy.log("Start a custom question with Orders");
       cy.visit("/question/new");
-      cy.contains("Custom question").click();
-      cy.contains("Sample Dataset").click();
-      cy.contains("Orders").click();
+      cy.findByText("Custom question").click();
+      cy.findByText("Sample Dataset").click();
+      cy.findByText("Orders").click();
 
       cy.log("Join to People table using default settings");
       cy.icon("join_left_outer ").click();
@@ -192,9 +192,19 @@ describe("scenarios > question > notebook", () => {
       cy.contains("Filter").click();
       cy.contains("Email").click();
       cy.contains("People – Email");
-      cy.get('[placeholder="Search by Email"]').type("wolf.");
-      cy.contains("wolf.dina@yahoo.com").click();
-      cy.contains("Add filter").click();
+      cy.findByPlaceholderText("Search by Email")
+        .type("wo")
+        .then($el => {
+          // This test was flaking due to a race condition with typing.
+          // We're ensuring that the value entered was correct and are retrying if it wasn't
+          const value = $el[0].value;
+          const input = cy.wrap($el);
+          if (value !== "wo") {
+            input.clear().type("wo");
+          }
+        });
+      cy.findByText("wolf.dina@yahoo.com").click();
+      cy.button("Add filter").click();
       cy.contains("Showing 1 row");
     });
 
@@ -221,7 +231,7 @@ describe("scenarios > question > notebook", () => {
       popover().within(() => cy.findByText("A_COLUMN").click());
       popover().within(() => cy.findByText("B_COLUMN").click());
 
-      cy.findByText("Visualize").click();
+      cy.button("Visualize").click();
       cy.queryByText("Visualize").then($el => cy.wrap($el).should("not.exist")); // wait for that screen to disappear to avoid "multiple elements" errors
 
       // check that query worked
@@ -255,13 +265,12 @@ describe("scenarios > question > notebook", () => {
           .click()
           .type("Sum Divide");
 
-        cy.findAllByRole("button")
-          .contains("Done")
+        cy.button("Done")
           .should("not.be.disabled")
           .click();
       });
       cy.route("POST", "/api/dataset").as("visualization");
-      cy.findByText("Visualize").click();
+      cy.button("Visualize").click();
 
       cy.wait("@visualization").then(xhr => {
         expect(xhr.response.body.error).not.to.exist;
@@ -380,7 +389,7 @@ describe("scenarios > question > notebook", () => {
       popover()
         .contains(/Products? → Category/)
         .click();
-      cy.findByText("Visualize").click();
+      cy.button("Visualize").click();
 
       cy.findByText("12928_Q1 + 12928_Q2");
       cy.log("Reported failing in v1.35.4.1 and `master` on July, 16 2020");
@@ -534,6 +543,175 @@ describe("scenarios > question > notebook", () => {
       // Make sure at least one card is rendered
       cy.get(".DashCard");
     });
+
+    it("binning for a date column on a joined table should offer only a single set of values (metabase#15446)", () => {
+      cy.createQuestion({
+        name: "15446",
+        query: {
+          "source-table": ORDERS_ID,
+          joins: [
+            {
+              fields: "all",
+              "source-table": PRODUCTS_ID,
+              condition: [
+                "=",
+                ["field", ORDERS.PRODUCT_ID, null],
+                [
+                  "field",
+                  PRODUCTS.ID,
+                  {
+                    "join-alias": "Products",
+                  },
+                ],
+              ],
+              alias: "Products",
+            },
+          ],
+          aggregation: [["sum", ["field", ORDERS.TOTAL, null]]],
+        },
+      }).then(({ body: { id: QUESTION_ID } }) => {
+        cy.visit(`/question/${QUESTION_ID}/notebook`);
+      });
+      cy.findByText("Pick a column to group by").click();
+      // In the first popover we'll choose the breakout method
+      popover().within(() => {
+        cy.findByText("User").click();
+        cy.findByPlaceholderText("Find...").type("cr");
+        cy.findByText("Created At")
+          .closest(".List-item")
+          .findByText("by month")
+          .click({ force: true });
+      });
+      // The second popover shows up and offers binning options
+      popover()
+        .last()
+        .within(() => {
+          cy.findByText("Hour of day").scrollIntoView();
+          // This is an implicit assertion - test fails when there is more than one string when using `findByText` instead of `findAllByText`
+          cy.findByText("Minute").click();
+        });
+      // Given that the previous step passes, we should now see this in the UI
+      cy.findByText("User → Created At: Minute");
+    });
+
+    it("should handle ad-hoc question with old syntax (metabase#15372)", () => {
+      visitQuestionAdhoc({
+        dataset_query: {
+          type: "query",
+          query: {
+            "source-table": ORDERS_ID,
+            filter: ["=", ["field-id", ORDERS.USER_ID], 1],
+          },
+          database: 1,
+        },
+      });
+
+      cy.findByText("User ID is 1");
+      cy.findByText("37.65");
+    });
+
+    it("breakout binning popover should have normal height even when it's rendered lower on the screen (metabase#15445)", () => {
+      cy.visit("/question/1/notebook");
+      cy.findByText("Summarize").click();
+      cy.findByText("Count of rows").click();
+      cy.findByText("Pick a column to group by").click();
+      cy.findByText("Created At")
+        .closest(".List-item")
+        .findByText("by month")
+        .click({ force: true });
+      // First a reality check - "Minute" is the only string visible in UI and this should pass
+      cy.findAllByText("Minute")
+        .first() // TODO: cy.findAllByText(string).first() is necessary workaround that will be needed ONLY until (metabase#15570) gets fixed
+        .isVisibleInPopover();
+      // The actual check that will fail until this issue gets fixed
+      cy.findAllByText("Week")
+        .first()
+        .isVisibleInPopover();
+    });
+
+    it("should add numeric filter on joined table (metabase#15570)", () => {
+      cy.createQuestion({
+        name: "15570",
+        query: {
+          "source-table": PRODUCTS_ID,
+          joins: [
+            {
+              fields: "all",
+              "source-table": ORDERS_ID,
+              condition: [
+                "=",
+                ["field", PRODUCTS.ID, null],
+                ["field", ORDERS.PRODUCT_ID, { "join-alias": "Orders" }],
+              ],
+              alias: "Orders",
+            },
+          ],
+        },
+      }).then(({ body: { id: QUESTION_ID } }) => {
+        cy.visit(`/question/${QUESTION_ID}/notebook`);
+      });
+      cy.findByText("Filter").click();
+      popover().within(() => {
+        cy.findByText(/Orders/i).click();
+        cy.findByText("Discount").click();
+      });
+      cy.get(".AdminSelect")
+        .contains("Equal to")
+        .click();
+      cy.findByText("Greater than").click();
+      cy.findByPlaceholderText("Enter a number").type(0);
+      cy.button("Add filter")
+        .should("not.be.disabled")
+        .click();
+    });
+
+    it("should not render duplicated values in date binning popover (metabase#15574)", () => {
+      openOrdersTable({ mode: "notebook" });
+      cy.findByText("Summarize").click();
+      cy.findByText("Pick a column to group by").click();
+      popover()
+        .findByText("Created At")
+        .closest(".List-item")
+        .findByText("by month")
+        .click({ force: true });
+      cy.findByText("Minute");
+    });
+  });
+
+  describe.skip("popover rendering issues (metabase#15502)", () => {
+    beforeEach(() => {
+      restore();
+      cy.signInAsAdmin();
+      cy.viewport(1280, 720);
+      cy.visit("/question/new");
+      cy.findByText("Custom question").click();
+      cy.findByText("Sample Dataset").click();
+      cy.findByText("Orders").click();
+    });
+
+    it("popover should not render outside of viewport regardless of the screen resolution (metabase#15502-1)", () => {
+      // Initial filter popover usually renders correctly within the viewport
+      cy.findByText("Add filters to narrow your answer")
+        .as("filter")
+        .click();
+      popover().isInViewport();
+      // Click anywhere outside this popover to close it because the issue with rendering happens when popover opens for the second time
+      cy.icon("gear").click();
+      cy.get("@filter").click();
+      popover().isInViewport();
+    });
+
+    it("popover should not cover the button that invoked it (metabase#15502-2)", () => {
+      // Initial summarize/metric popover usually renders initially without blocking the button
+      cy.findByText("Pick the metric you want to see")
+        .as("metric")
+        .click();
+      // Click outside to close this popover
+      cy.icon("gear").click();
+      // Popover invoked again blocks the button making it impossible to click the button for the third time
+      cy.get("@metric").click();
+      cy.get("@metric").click();
+    });
   });
 
   describe("nested", () => {
@@ -557,7 +735,7 @@ describe("scenarios > question > notebook", () => {
         cy.findByText("Add filter").click();
       });
 
-      cy.findByText("Visualize").click();
+      cy.button("Visualize").click();
       cy.findByText("Gadget").should("exist");
       cy.findByText("Gizmo").should("not.exist");
 
@@ -594,11 +772,11 @@ describe("scenarios > question > notebook", () => {
         .click()
         .type("Example", { delay: 100 });
 
-      cy.findAllByRole("button", { name: "Done" })
+      cy.button("Done")
         .should("not.be.disabled")
         .click();
 
-      cy.findAllByRole("button", { name: "Visualize" }).click();
+      cy.button("Visualize").click();
       cy.contains("Example");
       cy.contains("Big");
       cy.contains("Small");
@@ -615,11 +793,11 @@ describe("scenarios > question > notebook", () => {
 
       cy.contains(/^redundant input/i).should("not.exist");
 
-      cy.findAllByRole("button", { name: "Done" })
+      cy.button("Done")
         .should("not.be.disabled")
         .click();
 
-      cy.findAllByRole("button", { name: "Visualize" }).click();
+      cy.button("Visualize").click();
       cy.contains("Showing 97 rows");
     });
 
@@ -646,15 +824,165 @@ describe("scenarios > question > notebook", () => {
         cy.contains(/^expected closing parenthesis/i).should("not.exist");
         cy.contains(/^redundant input/i).should("not.exist");
 
-        cy.findAllByRole("button", { name: "Done" })
+        cy.button("Done")
           .should("not.be.disabled")
           .click();
 
-        cy.findAllByRole("button", { name: "Visualize" }).click();
+        cy.button("Visualize").click();
         cy.contains(filter);
         cy.contains(result);
       });
     });
+  });
+
+  describe("error feedback", () => {
+    it("should catch mismatched parentheses", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']").type("FLOOR [Price]/2)");
+        cy.findByPlaceholderText("Something nice and descriptive")
+          .click()
+          .type("Massive Discount");
+        cy.contains(/^Expecting an opening parenthesis after function FLOOR/i);
+      });
+    });
+
+    it("should catch missing parentheses", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']").type("LOWER [Vendor]");
+        cy.findByPlaceholderText("Something nice and descriptive")
+          .click()
+          .type("Massive Discount");
+        cy.contains(/^Expecting an opening parenthesis after function LOWER/i);
+      });
+    });
+
+    it("should catch invalid characters", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']").type("[Price] / #");
+        cy.findByPlaceholderText("Something nice and descriptive")
+          .click()
+          .type("Massive Discount");
+        cy.contains(/^Invalid character: #/i);
+      });
+    });
+
+    it("should catch unterminated string literals", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Filter").click();
+      cy.findByText("Custom Expression").click();
+      cy.get("[contenteditable='true']")
+        .click()
+        .clear()
+        .type('[Category] = "widget', { delay: 50 });
+      cy.button("Done")
+        .should("not.be.disabled")
+        .click();
+      cy.findByText("Missing closing quotes");
+    });
+
+    it("should catch unterminated field reference", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']").type("[Price / 2");
+        cy.findByPlaceholderText("Something nice and descriptive")
+          .click()
+          .type("Massive Discount");
+        cy.contains(/^Missing a closing bracket/i);
+      });
+    });
+
+    it("should catch non-existent field reference", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']").type("abcdef");
+        cy.findByPlaceholderText("Something nice and descriptive")
+          .click()
+          .type("Non-existent");
+        cy.contains(/^Unknown Field: abcdef/i);
+      });
+    });
+  });
+
+  describe("typing suggestion", () => {
+    it("should not suggest arithmetic operators", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      cy.get("[contenteditable='true']").type("[Price] ");
+      cy.contains("/").should("not.exist");
+    });
+
+    it("should correctly accept the chosen field suggestion", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      cy.get("[contenteditable='true']").type(
+        "[Rating]{leftarrow}{leftarrow}{leftarrow}",
+      );
+
+      // accept the only suggested item, i.e. "[Rating]"
+      cy.get("[contenteditable='true']").type("{enter}");
+
+      // if the replacement is correct -> "[Rating]"
+      // if the replacement is wrong -> "[Rating] ng"
+      cy.get("[contenteditable='true']")
+        .contains("[Rating] ng")
+        .should("not.exist");
+    });
+
+    it("should correctly accept the chosen function suggestion", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      cy.get("[contenteditable='true']").type("LTRIM([Title])");
+
+      // Place the cursor between "is" and "empty"
+      cy.get("[contenteditable='true']").type(
+        Array(13)
+          .fill("{leftarrow}")
+          .join(""),
+      );
+
+      // accept the first suggested function, i.e. "length"
+      cy.get("[contenteditable='true']").type("{enter}");
+
+      cy.get("[contenteditable='true']").contains("length([Title])");
+    });
+  });
+
+  describe("help text", () => {
+    it("should appear while inside a function", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      cy.get("[contenteditable='true']").type("Lower(");
+      cy.findByText("lower(text)");
+    });
+
+    it("should not appear while outside a function", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      cy.get("[contenteditable='true']").type("Lower([Category])");
+      cy.findByText("lower(text)").should("not.exist");
+    });
+
+    it("should appear after a field reference", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      cy.get("[contenteditable='true']").type("Lower([Category]");
+      cy.findByText("lower(text)");
+    });
+  });
+
+  it("should correctly insert function suggestion with the opening parenthesis", () => {
+    openProductsTable({ mode: "notebook" });
+    cy.findByText("Custom column").click();
+    cy.get("[contenteditable='true']").type("LOW{enter}");
+    cy.get("[contenteditable='true']").contains("lower(");
   });
 });
 
@@ -709,7 +1037,7 @@ function joinTwoSavedQuestions(ALIAS = "Joined Question") {
         cy.log("Reported in v0.36.0");
         cy.icon("notebook").click();
         cy.url().should("contain", "/notebook");
-        cy.findByText("Visualize").should("exist");
+        cy.button("Visualize").should("exist");
       });
     });
   });

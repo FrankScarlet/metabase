@@ -12,6 +12,7 @@ import {
   isEqualsOperator,
   doesOperatorExist,
   getOperatorByTypeAndName,
+  isFuzzyOperator,
 } from "metabase/lib/schema_metadata";
 
 import { TYPE } from "metabase/lib/types";
@@ -22,12 +23,9 @@ describe("schema_metadata", () => {
       expect(getFieldType({ base_type: TYPE.Date })).toEqual(TEMPORAL);
       expect(getFieldType({ base_type: TYPE.DateTime })).toEqual(TEMPORAL);
       expect(getFieldType({ base_type: TYPE.Time })).toEqual(TEMPORAL);
-      expect(
-        getFieldType({ semantic_type: TYPE.UNIXTimestampSeconds }),
-      ).toEqual(TEMPORAL);
-      expect(
-        getFieldType({ semantic_type: TYPE.UNIXTimestampMilliseconds }),
-      ).toEqual(TEMPORAL);
+      expect(getFieldType({ effective_type: TYPE.Date })).toEqual(TEMPORAL);
+      expect(getFieldType({ effective_type: TYPE.DateTime })).toEqual(TEMPORAL);
+      expect(getFieldType({ effective_type: TYPE.Time })).toEqual(TEMPORAL);
     });
     it("should know a number", () => {
       expect(getFieldType({ base_type: TYPE.BigInteger })).toEqual(NUMBER);
@@ -72,9 +70,15 @@ describe("schema_metadata", () => {
         COORDINATE,
       );
     });
-    it("should know something that is string-like", () => {
-      expect(getFieldType({ base_type: TYPE.TextLike })).toEqual(STRING_LIKE);
-      expect(getFieldType({ base_type: TYPE.IPAddress })).toEqual(STRING_LIKE);
+    describe("should know something that is string-like", () => {
+      it("TYPE.TextLike", () => {
+        expect(getFieldType({ base_type: TYPE.TextLike })).toEqual(STRING_LIKE);
+      });
+      it("TYPE.IPAddress", () => {
+        expect(getFieldType({ base_type: TYPE.IPAddress })).toEqual(
+          STRING_LIKE,
+        );
+      });
     });
     it("should know what it doesn't know", () => {
       expect(getFieldType({ base_type: "DERP DERP DERP" })).toEqual(undefined);
@@ -131,6 +135,18 @@ describe("schema_metadata", () => {
         validArgumentsFilters: [expect.any(Function), expect.any(Function)],
         verboseName: "Between",
       });
+    });
+  });
+
+  describe("isFuzzyOperator", () => {
+    it("should return false for operators that expect an exact match", () => {
+      expect(isFuzzyOperator({ name: "=" })).toBe(false);
+      expect(isFuzzyOperator({ name: "!=" })).toBe(false);
+    });
+
+    it("should return true for operators that are not exact", () => {
+      expect(isFuzzyOperator({ name: "contains" })).toBe(true);
+      expect(isFuzzyOperator({ name: "between" })).toBe(true);
     });
   });
 });

@@ -1,5 +1,9 @@
-import { restore, popover } from "__support__/cypress";
-import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
+import {
+  restore,
+  popover,
+  showDashboardCardActions,
+} from "__support__/e2e/cypress";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
 const { PEOPLE, PRODUCTS, PRODUCTS_ID } = SAMPLE_DATASET;
 
@@ -142,7 +146,7 @@ describe("scenarios > dashboard > chained filter", () => {
       cy.findByText("add another dashboard filter").click();
       popover().within(() => {
         cy.findByText("Location").click();
-        cy.findByText("Starts with").click();
+        cy.findByText("Dropdown").click();
       });
 
       // connect that to person.city
@@ -184,7 +188,7 @@ describe("scenarios > dashboard > chained filter", () => {
         cy.findByText("AK").click();
         cy.findByText("Add filter").click();
       });
-      cy.findByText("Location starts with").click();
+      cy.findByText("Location 1").click();
       popover().within(() => {
         cy.findByPlaceholderText(
           has_field_values === "search" ? "Search by City" : "Search the list",
@@ -301,7 +305,8 @@ describe("scenarios > dashboard > chained filter", () => {
 
         cy.visit(`/dashboard/${DASHBOARD_ID}`);
         cy.icon("pencil").click();
-        cy.get(".DashCard .Icon-click").click({ force: true });
+        showDashboardCardActions();
+        cy.icon("click").click();
         cy.findByText(/Ean/i).click();
         cy.findByText("Update a dashboard filter").click();
         cy.findByText("Available filters")

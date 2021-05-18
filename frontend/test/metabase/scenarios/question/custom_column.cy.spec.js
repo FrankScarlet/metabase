@@ -4,10 +4,12 @@ import {
   _typeUsingGet,
   _typeUsingPlaceholder,
   openOrdersTable,
+  openProductsTable,
+  openPeopleTable,
   visitQuestionAdhoc,
-} from "__support__/cypress";
+} from "__support__/e2e/cypress";
 
-import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
 const { ORDERS, ORDERS_ID, PRODUCTS, PRODUCTS_ID } = SAMPLE_DATASET;
 
@@ -31,7 +33,7 @@ describe("scenarios > question > custom columns", () => {
     cy.icon("add_data").click();
 
     popover().within(() => {
-      _typeUsingGet("[contenteditable='true']", "1 + 1");
+      _typeUsingGet("[contenteditable='true']", "1 + 1", 400);
       _typeUsingPlaceholder("Something nice and descriptive", columnName);
 
       cy.findByText("Done").click();
@@ -40,7 +42,7 @@ describe("scenarios > question > custom columns", () => {
     cy.server();
     cy.route("POST", "/api/dataset").as("dataset");
 
-    cy.findByText("Visualize").click();
+    cy.button("Visualize").click();
     cy.wait("@dataset");
     cy.findByText("There was a problem with your question").should("not.exist");
     cy.get(".Visualization").contains(columnName);
@@ -52,7 +54,7 @@ describe("scenarios > question > custom columns", () => {
       cy.icon("add_data").click();
 
       popover().within(() => {
-        _typeUsingGet("[contenteditable='true']", customFormula);
+        _typeUsingGet("[contenteditable='true']", customFormula, 400);
         _typeUsingPlaceholder("Something nice and descriptive", columnName);
 
         cy.findByText("Done").click();
@@ -61,7 +63,7 @@ describe("scenarios > question > custom columns", () => {
       cy.server();
       cy.route("POST", "/api/dataset").as("dataset");
 
-      cy.findByText("Visualize").click();
+      cy.button("Visualize").click();
       cy.wait("@dataset");
       cy.get(".Visualization").contains(columnName);
     });
@@ -107,7 +109,7 @@ describe("scenarios > question > custom columns", () => {
     cy.server();
     cy.route("POST", "/api/dataset").as("dataset");
 
-    cy.findByText("Visualize").click();
+    cy.button("Visualize").click();
     cy.wait("@dataset");
     cy.findByText("There was a problem with your question").should("not.exist");
     // This is a pre-save state of the question but the column name should appear
@@ -122,7 +124,7 @@ describe("scenarios > question > custom columns", () => {
     // Add custom column that will be used later in summarize (group by)
     cy.findByText("Custom column").click();
     popover().within(() => {
-      _typeUsingGet("[contenteditable='true']", "1 + 1");
+      _typeUsingGet("[contenteditable='true']", "1 + 1", 400);
       _typeUsingPlaceholder("Something nice and descriptive", columnName);
 
       cy.findByText("Done").click();
@@ -149,7 +151,7 @@ describe("scenarios > question > custom columns", () => {
     cy.server();
     cy.route("POST", "/api/dataset").as("dataset");
 
-    cy.findByText("Visualize").click();
+    cy.button("Visualize").click();
     cy.wait("@dataset");
 
     cy.get(".Visualization").within(() => {
@@ -175,15 +177,23 @@ describe("scenarios > question > custom columns", () => {
 
     // add custom column
     cy.findByText("Custom column").click();
-    _typeUsingGet("[contenteditable='true']", "1 + 1");
-    _typeUsingPlaceholder("Something nice and descriptive", "X");
-    cy.findByText("Done").click();
+    popover().within(() => {
+      // Double click at the end of this command is just an ugly hack that seems to reduce the flakiness of this test a lot!
+      // TODO: investigate contenteditable element - it is losing input value and I could reproduce it even locally (outside of Cypress)
+      cy.get("[contenteditable='true']")
+        .type("1+1")
+        .click()
+        .click();
+      cy.findByPlaceholderText("Something nice and descriptive").type("X");
 
-    cy.findByText("Visualize").click();
+      cy.findByText("Done").click();
+    });
+
+    cy.button("Visualize").click();
 
     // wait for results to load
     cy.get(".LoadingSpinner").should("not.exist");
-    cy.findByText("Visualize").should("not.exist");
+    cy.button("Visualize").should("not.exist");
 
     cy.log(
       "**Fails in 0.35.0, 0.35.1, 0.35.2, 0.35.4 and the latest master (2020-10-21)**",
@@ -398,12 +408,93 @@ describe("scenarios > question > custom columns", () => {
     cy.get("[class*=NotebookCellItem]")
       .contains(CE_NAME)
       .should("not.exist");
-    cy.findByText("Visualize").click();
+    cy.button("Visualize").click();
 
     cy.wait("@dataset").then(xhr => {
       expect(xhr.response.body.error).to.not.exist;
     });
     cy.contains("37.65");
+  });
+
+  describe("data type", () => {
+    it("should understand string functions", () => {
+      openProductsTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']")
+          .type("concat([Category], [Title])")
+          .blur();
+        cy.findByPlaceholderText("Something nice and descriptive").type(
+          "CategoryTitle",
+        );
+        cy.button("Done").click();
+      });
+      cy.findByText("Filter").click();
+      popover()
+        .findByText("CategoryTitle")
+        .click();
+      cy.findByPlaceholderText("Enter a number").should("not.exist");
+      cy.findByPlaceholderText("Enter some text");
+    });
+
+    it("should relay the type of a date field", () => {
+      openPeopleTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        _typeUsingGet("[contenteditable='true']", "[Birth Date]", 400);
+        _typeUsingPlaceholder("Something nice and descriptive", "DoB");
+        cy.findByText("Done").click();
+      });
+      cy.findByText("Filter").click();
+      popover()
+        .findByText("DoB")
+        .click();
+      cy.findByPlaceholderText("Enter a number").should("not.exist");
+      cy.findByText("Previous");
+      cy.findByText("Days");
+    });
+
+    it("should handle CASE", () => {
+      openOrdersTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']")
+          .type("case([Discount] > 0, [Created At], [Product → Created At])")
+          .blur();
+        cy.findByPlaceholderText("Something nice and descriptive").type(
+          "MiscDate",
+        );
+        cy.button("Done").click();
+      });
+      cy.findByText("Filter").click();
+      popover()
+        .findByText("MiscDate")
+        .click();
+      cy.findByPlaceholderText("Enter a number").should("not.exist");
+      cy.findByText("Previous");
+      cy.findByText("Days");
+    });
+
+    it("should handle COALESCE", () => {
+      openOrdersTable({ mode: "notebook" });
+      cy.findByText("Custom column").click();
+      popover().within(() => {
+        cy.get("[contenteditable='true']")
+          .type("COALESCE([Product → Created At], [Created At])")
+          .blur();
+        cy.findByPlaceholderText("Something nice and descriptive").type(
+          "MiscDate",
+        );
+        cy.button("Done").click();
+      });
+      cy.findByText("Filter").click();
+      popover()
+        .findByText("MiscDate")
+        .click();
+      cy.findByPlaceholderText("Enter a number").should("not.exist");
+      cy.findByText("Previous");
+      cy.findByText("Days");
+    });
   });
 
   it("should handle using `case()` when referencing the same column names (metabase#14854)", () => {

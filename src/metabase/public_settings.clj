@@ -46,6 +46,12 @@
   :type    :json
   :default {})
 
+(defsetting version-info-last-checked
+  (deferred-tru "Indicates when Metabase last checked for new versions.")
+  :visibility :public
+  :type       :timestamp
+  :default    nil)
+
 (defsetting site-name
   (deferred-tru "The name used for this instance of Metabase.")
   :default "Metabase")
@@ -80,7 +86,9 @@
 ;; This value is *guaranteed* to never have a trailing slash :D
 ;; It will also prepend `http://` to the URL if there's no protocol when it comes in
 (defsetting site-url
-  (deferred-tru "The base URL of this Metabase instance, e.g. \"http://metabase.my-company.com\".")
+  (str (deferred-tru "This URL is used for things like creating links in emails, auth redirects,")
+       " "
+       (deferred-tru "and in some embedding scenarios, so changing it could break functionality or get you locked out of this instance."))
   :visibility :public
   :getter (fn []
             (try
@@ -89,7 +97,7 @@
                 (log/error e (trs "site-url is invalid; returning nil for now. Will be reset on next request.")))))
   :setter (fn [new-value]
             (let [new-value (some-> new-value normalize-site-url)
-                  https?    (some-> new-value (str/starts-with?  "https:" ))]
+                  https?    (some-> new-value (str/starts-with?  "https:"))]
               ;; if the site URL isn't HTTPS then disable force HTTPS redirects if set
               (when-not https?
                 (redirect-all-requests-to-https false))
@@ -283,8 +291,9 @@
 
 (defsetting source-address-header
   (deferred-tru "Identify the source of HTTP requests by this header's value, instead of its remote address.")
-  :getter (fn [] (some-> (setting/get-string :source-address-header)
-                         u/lower-case-en)))
+  :default "X-Forwarded-For"
+  :getter  (fn [] (some-> (setting/get-string :source-address-header)
+                          u/lower-case-en)))
 
 (defn remove-public-uuid-if-public-sharing-is-disabled
   "If public sharing is *disabled* and `object` has a `:public_uuid`, remove it so people don't try to use it (since it
@@ -332,7 +341,7 @@
   "Current password complexity requirements"
   :visibility :public
   :setter     :none
-  :getter     (constantly password/active-password-complexity))
+  :getter     password/active-password-complexity)
 
 (defsetting report-timezone-short
   "Current report timezone abbreviation"

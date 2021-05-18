@@ -31,6 +31,7 @@ import { defer } from "metabase/lib/promise";
 import Question from "metabase-lib/lib/Question";
 import { FieldDimension } from "metabase-lib/lib/Dimension";
 import { cardIsEquivalent, cardQueryIsEquivalent } from "metabase/meta/Card";
+import { normalize } from "cljs/metabase.mbql.js";
 
 import {
   getCard,
@@ -63,7 +64,6 @@ import { getSensibleDisplays } from "metabase/visualizations";
 import { getCardAfterVisualizationClick } from "metabase/visualizations/lib/utils";
 import { getPersistableDefaultSettingsForSeries } from "metabase/visualizations/lib/settings/visualization";
 
-import Questions from "metabase/entities/questions";
 import Databases from "metabase/entities/databases";
 import Snippets from "metabase/entities/snippets";
 
@@ -313,6 +313,7 @@ export const initializeQB = (location, params) => {
 
     const { currentUser } = getState();
 
+    const cardId = Urls.extractEntityId(params.slug);
     let card, originalCard;
     const uiControls: UiControls = {
       isEditing: false,
@@ -335,15 +336,24 @@ export const initializeQB = (location, params) => {
 
     let preserveParameters = false;
     let snippetFetch;
-    if (params.cardId || serializedCard) {
+    if (cardId || serializedCard) {
       // existing card being loaded
       try {
-        // if we have a serialized card then unpack it and use it
-        card = serializedCard ? deserializeCardFromUrl(serializedCard) : {};
+        // if we have a serialized card then unpack and use it
+        if (serializedCard) {
+          card = deserializeCardFromUrl(serializedCard);
+
+          // if serialized query has database we normalize syntax to support older mbql
+          if (card.dataset_query.database != null) {
+            card.dataset_query = normalize(card.dataset_query);
+          }
+        } else {
+          card = {};
+        }
 
         // load the card either from `cardId` parameter or the serialized card
-        if (params.cardId) {
-          card = await loadCard(params.cardId);
+        if (cardId) {
+          card = await loadCard(cardId);
           // when we are loading from a card id we want an explicit clone of the card we loaded which is unmodified
           originalCard = Utils.copy(card);
           // for showing the "started from" lineage correctly when adding filters/breakouts and when going back and forth
@@ -398,7 +408,7 @@ export const initializeQB = (location, params) => {
         uiControls.isEditing = !!options.edit;
 
         // if this is the users first time loading a saved card on the QB then show them the newb modal
-        if (params.cardId && currentUser.is_qbnewb) {
+        if (cardId && currentUser.is_qbnewb) {
           uiControls.isShowingNewbModal = true;
           MetabaseAnalytics.trackEvent("QueryBuilder", "Show Newb Modal");
         }
@@ -1236,7 +1246,6 @@ export const loadObjectDetailFKReferences = createThunkAction(
           ) {
             info["value"] = result.data.rows[0][0];
           } else {
-            // $FlowFixMe
             info["value"] = "Unknown";
           }
         } catch (error) {
@@ -1276,19 +1285,6 @@ export const loadObjectDetailFKReferences = createThunkAction(
 
 export const CLEAR_OBJECT_DETAIL_FK_REFERENCES =
   "metabase/qb/CLEAR_OBJECT_DETAIL_FK_REFERENCES";
-
-// DEPRECATED: use metabase/entities/questions
-export const ARCHIVE_QUESTION = "metabase/qb/ARCHIVE_QUESTION";
-export const archiveQuestion = createThunkAction(
-  ARCHIVE_QUESTION,
-  (questionId, archived = true) => async (dispatch, getState) => {
-    const card = getState().qb.card;
-
-    await dispatch(Questions.actions.setArchived({ id: card.id }, archived));
-
-    dispatch(push(Urls.collection(card.collection_id)));
-  },
-);
 
 export const VIEW_NEXT_OBJECT_DETAIL = "metabase/qb/VIEW_NEXT_OBJECT_DETAIL";
 export const viewNextObjectDetail = () => {

@@ -5,9 +5,9 @@ import {
   popover,
   sidebar,
   visitQuestionAdhoc,
-} from "__support__/cypress";
-import { USER_GROUPS } from "__support__/cypress_data";
-import { SAMPLE_DATASET } from "__support__/cypress_sample_dataset";
+} from "__support__/e2e/cypress";
+import { USER_GROUPS } from "__support__/e2e/cypress_data";
+import { SAMPLE_DATASET } from "__support__/e2e/cypress_sample_dataset";
 
 const {
   ORDERS,
@@ -27,7 +27,7 @@ describe("scenarios > visualizations > drillthroughs > chart drill", () => {
 
   it("should allow brush date filter", () => {
     cy.createQuestion({
-      name: "Orders by Product → Created At (month) and Product → Category",
+      name: "Brush Date Filter",
       query: {
         "source-table": ORDERS_ID,
         aggregation: [["count"]],
@@ -51,13 +51,15 @@ describe("scenarios > visualizations > drillthroughs > chart drill", () => {
       cy.wait(100); // wait longer to avoid grabbing the svg before a chart redraw
 
       // drag across to filter
-      cy.get(".dc-chart svg")
+      cy.get(".Visualization")
         .trigger("mousedown", 100, 200)
-        .trigger("mousemove", 200, 200)
-        .trigger("mouseup", 200, 200);
+        .trigger("mousemove", 210, 200)
+        .trigger("mouseup", 210, 200);
 
       // new filter applied
-      cy.contains("Created At between May, 2016 July, 2016");
+      // Note: Test was flaking because apparently mouseup doesn't always happen at the same position.
+      //       It is enough that we assert that the filter exists and that it starts with May, 2016
+      cy.contains(/^Created At between May, 2016/);
       // more granular axis labels
       cy.contains("June, 2016");
       // confirm that product category is still broken out
@@ -238,7 +240,7 @@ describe("scenarios > visualizations > drillthroughs > chart drill", () => {
     cy.findByText("Add filter").click();
 
     // Visualize: line
-    cy.findByText("Visualize").click();
+    cy.button("Visualize").click();
     cy.findByText("Visualization").click();
     cy.icon("line").click();
     cy.findByText("Done").click();
@@ -259,7 +261,7 @@ describe("scenarios > visualizations > drillthroughs > chart drill", () => {
     cy.findByText("There was a problem with your question").should("not.exist");
   });
 
-  it.skip("should display correct value in a tooltip for unaggregated data (metabase#11907)", () => {
+  it("should display correct value in a tooltip for unaggregated data (metabase#11907)", () => {
     cy.createNativeQuestion({
       name: "11907",
       native: {
