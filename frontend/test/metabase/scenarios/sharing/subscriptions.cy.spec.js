@@ -26,6 +26,24 @@ describe("scenarios > dashboard > subscriptions", () => {
       .should("have.class", "cursor-default");
   });
 
+  it.skip("should allow sharing if dashboard contains only text cards (metabase#15077)", () => {
+    cy.createDashboard("15077D").then(({ body: { id: DASHBOARD_ID } }) => {
+      cy.visit(`/dashboard/${DASHBOARD_ID}`);
+    });
+    cy.icon("pencil").click();
+    cy.icon("string").click();
+    cy.findByPlaceholderText("Write here, and use Markdown if you'd like")
+      .click()
+      .type("Foo");
+    cy.button("Save").click();
+    cy.findByText("You're editing this dashboard.").should("not.exist");
+    cy.icon("share")
+      .closest("a")
+      .should("have.class", "cursor-pointer")
+      .click();
+    cy.findByText("Dashboard subscriptions").click();
+  });
+
   describe("with no channels set up", () => {
     it("should instruct user to connect email or slack", () => {
       openDashboardSubscriptions();
@@ -330,7 +348,8 @@ function assignRecipient({ user = admin, dashboard_id = 1 } = {}) {
   cy.findByText("Email it").click();
   cy.findByPlaceholderText("Enter user names or email addresses")
     .click()
-    .type(`${user.first_name} ${user.last_name}{enter}`);
+    .type(`${user.first_name} ${user.last_name}{enter}`)
+    .blur(); // blur is needed to close the popover
 }
 
 function clickButton(button_name) {

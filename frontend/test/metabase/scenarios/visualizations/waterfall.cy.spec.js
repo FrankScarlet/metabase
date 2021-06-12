@@ -136,6 +136,51 @@ describe("scenarios > visualizations > waterfall", () => {
       .should("not.have.css", "opacity", "1");
   });
 
+  it.skip("should work for unaggregated data (metabase#15465)", () => {
+    visitQuestionAdhoc({
+      dataset_query: {
+        type: "native",
+        native: {
+          query:
+            "SELECT parsedatetime('2020-01-01', 'yyyy-MM-dd') AS \"d\", 1 AS \"c\" UNION ALL\nSELECT parsedatetime('2020-01-01', 'yyyy-MM-dd') AS \"d\", 2 AS \"c\" UNION ALL\nSELECT parsedatetime('2020-01-02', 'yyyy-MM-dd') AS \"d\", 3 AS \"c\"",
+        },
+        database: 1,
+      },
+    });
+    cy.findByText("Visualization").click();
+    cy.icon("waterfall").click({ force: true });
+    cy.get(".Visualization .bar");
+  });
+
+  it.skip("should display correct values when one of them is 0 (metabase#16246)", () => {
+    visitQuestionAdhoc({
+      dataset_query: {
+        type: "native",
+        native: {
+          query:
+            "SELECT * FROM (\nVALUES \n('a',2),\n('b',1),\n('c',-0.5),\n('d',-0.5),\n('e',0.1),\n('f',0),\n('g', -2)\n)\n",
+          "template-tags": {},
+        },
+        database: 1,
+      },
+      display: "waterfall",
+      visualization_settings: {
+        "graph.show_values": true,
+      },
+    });
+
+    cy.get(".value-label")
+      .as("labels")
+      .eq(-3)
+      .invoke("text")
+      .should("eq", "0");
+
+    cy.get("@labels")
+      .last()
+      .invoke("text")
+      .should("eq", "0.1");
+  });
+
   describe("scenarios > visualizations > waterfall settings", () => {
     beforeEach(() => {
       restore();

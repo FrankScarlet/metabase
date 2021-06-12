@@ -185,13 +185,13 @@
 
 (defmulti cast-temporal-string
   "Cast a string representing "
-  {:arglists '([driver semantic_type expr]), :added "0.38.0"}
-  (fn [driver semantic_type _] [(driver/dispatch-on-initialized-driver driver) semantic_type])
+  {:arglists '([driver coercion-strategy expr]), :added "0.38.0"}
+  (fn [driver coercion-strategy _] [(driver/dispatch-on-initialized-driver driver) coercion-strategy])
   :hierarchy #'driver/hierarchy)
 
 (defmethod cast-temporal-string :default
-  [driver semantic_type _expr]
-  (throw (Exception. (tru "Driver {0} does not support {1}" driver semantic_type))))
+  [driver coercion-strategy _expr]
+  (throw (Exception. (tru "Driver {0} does not support {1}" driver coercion-strategy))))
 
 (defmethod unix-timestamp->honeysql [:sql :milliseconds]
   [driver _ expr]
@@ -200,6 +200,16 @@
 (defmethod unix-timestamp->honeysql [:sql :microseconds]
   [driver _ expr]
   (unix-timestamp->honeysql driver :seconds (hx// expr 1000000)))
+
+(defmulti cast-temporal-byte
+  "Cast a byte field"
+  {:arglists '([driver coercion-strategy expr]), :added "0.38.0"}
+  (fn [driver coercion-strategy _] [(driver/dispatch-on-initialized-driver driver) coercion-strategy])
+  :hierarchy #'driver/hierarchy)
+
+(defmethod cast-temporal-byte :default
+  [driver coercion-strategy _expr]
+  (throw (Exception. (tru "Driver {0} does not support {1}" driver coercion-strategy))))
 
 (defmulti apply-top-level-clause
   "Implementations of this methods define how the SQL Query Processor handles various top-level MBQL clauses. Each
@@ -250,14 +260,18 @@
 (defn cast-field-if-needed
   "Wrap a `field-identifier` in appropriate HoneySQL expressions if it refers to a UNIX timestamp Field."
   [driver field field-identifier]
-  (match [(:base_type field) (:coercion_strategy field)]
-    [(:isa? :type/Number)   (:isa? :Coercion/UNIXTime->Temporal)]
+  (match [(:base_type field) (:coercion_strategy field) (::outer-select field)]
+    [_ _ true] field-identifier ;; casting happens inside the inner query
+
+    [(:isa? :type/Number)   (:isa? :Coercion/UNIXTime->Temporal) _]
     (unix-timestamp->honeysql driver
                               (semantic-type->unix-timestamp-unit (:coercion_strategy field))
                               field-identifier)
 
-    [:type/Text             (:isa? :Coercion/String->Temporal)  ]
+    [:type/Text             (:isa? :Coercion/String->Temporal)   _]
     (cast-temporal-string driver (:coercion_strategy field) field-identifier)
+    [(:isa? :type/*)        (:isa? :Coercion/Bytes->Temporal)    _]
+    (cast-temporal-byte driver (:coercion_strategy field) field-identifier)
 
     :else field-identifier))
 
@@ -370,8 +384,15 @@
   (binding [*field-options* options]
     (if (:join-alias options)
       (compile-field-with-join-aliases driver field-clause)
-      (let [honeysql-form (if (integer? field-id-or-name)
+      (let [honeysql-form (cond
+                            ;; selects from an inner select should not
+                            (and (integer? field-id-or-name) (contains? options ::outer-select))
+                            (->honeysql driver (assoc (qp.store/field field-id-or-name) ::outer-select true))
+
+                            (integer? field-id-or-name)
                             (->honeysql driver (qp.store/field field-id-or-name))
+
+                            :else
                             (->honeysql driver (hx/identifier :field *table-alias* field-id-or-name)))]
         (cond->> honeysql-form
           (:temporal-unit options) (apply-temporal-bucketing driver options)
@@ -956,7 +977,10 @@
                                          distinct)))]
     (-> (mbql.u/replace query
           [:expression expression-name]
-          [:field expression-name {:base-type (:base_type (annotate/infer-expression-type &match))}])
+          [:field expression-name {:base-type (:base_type (annotate/infer-expression-type &match))}]
+          ;; the outer select should not cast as the cast happens in the inner select
+          [:field (field-id :guard int?) field-info]
+          [:field field-id (assoc field-info ::outer-select true)])
         (dissoc :source-table :joins :expressions :source-metadata)
         (assoc :source-query subselect))))
 

@@ -235,6 +235,13 @@
    (number? value) value
    ;; same goes for an instance of CommaSeperated values
    (instance? CommaSeparatedNumbers value) value
+
+   ;; newer operators use vectors as their arguments even if there's only one
+   (vector? value)
+   (let [values (map parse-number value)]
+     (if (next values)
+       (i/map->CommaSeparatedNumbers {:numbers values})
+       (first values)))
    ;; if the value is a string, then split it by commas in the string. Usually there should be none.
    ;; Parse each part as a number.
    (string? value)
@@ -265,17 +272,18 @@
 (s/defn ^:private update-filter-for-field-type :- ParsedParamValue
   "Update a Field Filter with a textual, or sequence of textual, values. The base type and semantic type of the field
   are used to determine what 'semantic' type interpretation is required (e.g. for UUID fields)."
-  [{{effective_type :effective_type, :as _field} :field, {value :value} :value, :as field-filter} :- FieldFilter]
-  (let [new-value (cond
+  [{field :field, {value :value} :value, :as field-filter} :- FieldFilter]
+  (let [effective-type (or (:effective_type field) (:base_type field))
+        new-value (cond
                     (string? value)
-                    (parse-value-for-field-type effective_type value)
+                    (parse-value-for-field-type effective-type value)
 
                     (and (sequential? value)
                          (every? string? value))
-                    (mapv (partial parse-value-for-field-type effective_type) value))]
+                    (mapv (partial parse-value-for-field-type effective-type) value))]
     (when (not= value new-value)
       (log/tracef "update filter for base-type: %s value: %s -> %s"
-                  (pr-str effective_type) (pr-str value) (pr-str new-value)))
+                  (pr-str effective-type) (pr-str value) (pr-str new-value)))
     (cond-> field-filter
       new-value (assoc-in [:value :value] new-value))))
 

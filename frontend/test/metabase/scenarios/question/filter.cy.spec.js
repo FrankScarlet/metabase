@@ -3,6 +3,7 @@ import {
   openOrdersTable,
   openProductsTable,
   openReviewsTable,
+  openPeopleTable,
   popover,
   visitQuestionAdhoc,
 } from "__support__/e2e/cypress";
@@ -300,7 +301,7 @@ describe("scenarios > question > filter", () => {
     cy.findAllByText("Fantastic Wool Shirt").should("not.exist");
   });
 
-  it.skip("should filter using Custom Expression from aggregated results (metabase#12839)", () => {
+  it("should filter using Custom Expression from aggregated results (metabase#12839)", () => {
     const CE_NAME = "Simple Math";
 
     cy.createQuestion({
@@ -309,7 +310,11 @@ describe("scenarios > question > filter", () => {
         filter: [">", ["field", CE_NAME, { "base-type": "type/Float" }], 0],
         "source-query": {
           aggregation: [
-            ["aggregation-options", ["+", 1, 1], { "display-name": CE_NAME }],
+            [
+              "aggregation-options",
+              ["+", 1, 1],
+              { name: CE_NAME, "display-name": CE_NAME },
+            ],
           ],
           breakout: [["field", PRODUCTS.CATEGORY, null]],
           "source-table": PRODUCTS_ID,
@@ -565,9 +570,8 @@ describe("scenarios > question > filter", () => {
     cy.findByText(/^Created At is before/i);
   });
 
-  it.skip("should display original custom expression filter with dates on subsequent click (metabase#12492)", () => {
-    cy.server();
-    cy.route("POST", "/api/dataset").as("dataset");
+  it("should display original custom expression filter with dates on subsequent click (metabase#12492)", () => {
+    cy.intercept("POST", "/api/dataset").as("dataset");
 
     visitQuestionAdhoc({
       dataset_query: {
@@ -590,11 +594,9 @@ describe("scenarios > question > filter", () => {
     });
 
     cy.wait("@dataset");
-    cy.findByText(/^Created At is after/i)
-      .should("not.contain", "Unknown")
-      .click();
+    cy.findByText(/Created At > Product? → Created At/i).click();
     cy.get("[contenteditable='true']").contains(
-      /\[Created At\] > \[Products? -> Created At\]/,
+      /\[Created At\] > \[Products? → Created At\]/,
     );
   });
 
@@ -635,16 +637,39 @@ describe("scenarios > question > filter", () => {
   });
 
   it("should offer case expression in the auto-complete suggestions", () => {
-    openReviewsTable({ mode: "notebook" });
-    cy.findByText("Filter").click();
-    cy.findByText("Custom Expression").click();
+    openExpressionEditorFromFreshlyLoadedPage();
+
     popover().contains(/case/i);
 
+    typeInExpressionEditor("c");
+
     // "case" is still there after typing a bit
-    cy.get("[contenteditable='true']")
-      .click()
-      .type("c");
     popover().contains(/case/i);
+  });
+
+  it("should enable highlighting suggestions with keyboard up and down arrows (metabase#16210)", () => {
+    const transparent = "rgba(0, 0, 0, 0)";
+
+    openExpressionEditorFromFreshlyLoadedPage();
+
+    typeInExpressionEditor("c");
+
+    cy.contains("Created At")
+      .closest("li")
+      .should("have.css", "background-color")
+      .and("not.eq", transparent);
+
+    typeInExpressionEditor("{downarrow}");
+
+    cy.contains("Created At")
+      .closest("li")
+      .should("have.css", "background-color")
+      .and("eq", transparent);
+
+    cy.contains("Product → Category")
+      .closest("li")
+      .should("have.css", "background-color")
+      .and("not.eq", transparent);
   });
 
   it.skip("should provide accurate auto-complete custom-expression suggestions based on the aggregated column name (metabase#14776)", () => {
@@ -906,4 +931,219 @@ describe("scenarios > question > filter", () => {
     cy.findByText("Doohickey");
     cy.findByText("Gizmo").should("not.exist");
   });
+
+  it("custom expression filter should reference fields by their name, not by their id (metabase#15748)", () => {
+    openOrdersTable({ mode: "notebook" });
+    cy.findByText("Filter").click();
+    cy.findByText("Custom Expression").click();
+    cy.get("[contenteditable=true]").type("[Total] < [Subtotal]");
+    cy.button("Done").click();
+    cy.findByText("Total < Subtotal");
+  });
+
+  it("custom expression filter should allow the use of parentheses in combination with logical operators (metabase#15754)", () => {
+    openOrdersTable({ mode: "notebook" });
+    cy.findByText("Filter").click();
+    cy.findByText("Custom Expression").click();
+    cy.get("[contenteditable=true]")
+      .type("([ID] > 2 OR [Subtotal] = 100) and [Tax] < 4")
+      .blur();
+    cy.findByText(/^Expected closing parenthesis but found/).should(
+      "not.exist",
+    );
+    cy.button("Done").should("not.be.disabled");
+  });
+
+  it.skip("custom expression filter should work with numeric value before an operator (metabase#15893)", () => {
+    cy.intercept("POST", "/api/dataset").as("dataset");
+
+    openOrdersTable({ mode: "notebook" });
+    cy.findByText("Filter").click();
+    cy.findByText("Custom Expression").click();
+    cy.get("[contenteditable=true]")
+      .type("0 < [ID]")
+      .blur();
+    cy.button("Done").click();
+    cy.button("Visualize").click();
+    cy.wait("@dataset").then(xhr => {
+      expect(xhr.response.body.error).to.not.exist;
+    });
+  });
+
+  it.skip("should work on twice summarized questions (metabase#15620)", () => {
+    visitQuestionAdhoc({
+      dataset_query: {
+        database: 1,
+        query: {
+          "source-query": {
+            "source-table": 1,
+            aggregation: [["count"]],
+            breakout: [["field", 7, { "temporal-unit": "month" }]],
+          },
+          aggregation: [
+            ["avg", ["field", "count", { "base-type": "type/Integer" }]],
+          ],
+        },
+        type: "query",
+      },
+    });
+    cy.get(".ScalarValue").contains("5");
+    cy.findAllByRole("button")
+      .contains("Filter")
+      .click();
+    cy.findByTestId("sidebar-right").within(() => {
+      cy.findByText("Category").click();
+      cy.findByText("Gizmo").click();
+    });
+    cy.button("Add filter")
+      .should("not.be.disabled")
+      .click();
+    cy.get(".dot");
+  });
+
+  it("user shouldn't need to scroll to add filter (metabase#14307)", () => {
+    cy.viewport(1280, 720);
+    openPeopleTable({ mode: "notebook" });
+    cy.findByText("Filter").click();
+    popover()
+      .findByText("State")
+      .click();
+    cy.findByText("AL").click();
+    cy.button("Add filter").isVisibleInPopover();
+  });
+
+  it.skip("shoud retain all data series after saving a question where custom expression formula is the first metric (metabase#15882)", () => {
+    visitQuestionAdhoc({
+      dataset_query: {
+        database: 1,
+        query: {
+          "source-table": ORDERS_ID,
+          aggregation: [
+            [
+              "aggregation-options",
+              [
+                "/",
+                ["sum", ["field", ORDERS.DISCOUNT, null]],
+                ["sum", ["field", ORDERS.SUBTOTAL, null]],
+              ],
+              { "display-name": "Discount %" },
+            ],
+            ["count"],
+            ["avg", ["field", ORDERS.TOTAL, null]],
+          ],
+          breakout: [
+            ["field", ORDERS.CREATED_AT, { "temporal-unit": "month" }],
+          ],
+        },
+        type: "query",
+      },
+      display: "line",
+    });
+    assertOnLegendLabels();
+    cy.get(".line").should("have.length", 3);
+    cy.findByText("Save").click();
+    cy.button("Save").click();
+    cy.button("Not now").click();
+    assertOnLegendLabels();
+    cy.get(".line").should("have.length", 3);
+
+    function assertOnLegendLabels() {
+      cy.get(".Card-title")
+        .should("contain", "Discount %")
+        .and("contain", "Count")
+        .and("contain", "Average of Total");
+    }
+  });
+
+  describe.skip("specific combination of filters can cause frontend reload or blank screen (metabase#16198)", () => {
+    it("shouldn't display chosen category in a breadcrumb (metabase#16198-1)", () => {
+      visitQuestionAdhoc({
+        dataset_query: {
+          database: 1,
+          query: {
+            "source-table": PRODUCTS_ID,
+            filter: [
+              "and",
+              ["=", ["field", PRODUCTS.CATEGORY, null], "Gizmo"],
+              ["=", ["field", PRODUCTS.ID, null], 1],
+            ],
+          },
+          type: "query",
+        },
+      });
+
+      cy.findByRole("link", { name: "Sample Dataset" })
+        .parent()
+        .within(() => {
+          cy.findByText("Gizmo").should("not.exist");
+        });
+    });
+
+    it("adding an ID filter shouldn't cause page error and page reload (metabase#16198-2)", () => {
+      openOrdersTable({ mode: "notebook" });
+      cy.findByText("Filter").click();
+      cy.findByText("Custom Expression").click();
+      cy.get("[contenteditable=true]")
+        .type("[Total] < [Product → Price]")
+        .blur();
+      cy.button("Done").click();
+      // Filter currently says "Total is less than..." but it can change in https://github.com/metabase/metabase/pull/16174 to "Total < Price"
+      // See: https://github.com/metabase/metabase/pull/16209#discussion_r638129099
+      cy.findByText(/^Total/);
+      cy.icon("add")
+        .last()
+        .click();
+      popover()
+        .findByText(/^ID$/i)
+        .click();
+      cy.findByPlaceholderText("Enter an ID").type("1");
+      cy.button("Add filter").click();
+      cy.findByText(/^Total/);
+      cy.findByText("Something went wrong").should("not.exist");
+    });
+
+    it("removing first filter in a sequence shouldn't result in an empty page (metabase#16198-3)", () => {
+      openOrdersTable({ mode: "notebook" });
+      cy.findByText("Filter").click();
+      popover()
+        .findByText("Total")
+        .click();
+      cy.findByPlaceholderText("Enter a number").type("123");
+      cy.button("Add filter").click();
+      cy.icon("add")
+        .last()
+        .click();
+      cy.findByText("Custom Expression").click();
+      cy.get("[contenteditable=true]")
+        .type("[Total] < [Product → Price]")
+        .blur();
+      cy.button("Done").click();
+      // cy.findByText(/^Total/);
+      cy.icon("add")
+        .last()
+        .click();
+      popover()
+        .findByText(/^ID$/i)
+        .click();
+      cy.findByPlaceholderText("Enter an ID").type("1");
+      cy.button("Add filter").click();
+      cy.findByText("Total is equal to 123")
+        .parent()
+        .find(".Icon-close")
+        .click();
+      cy.button("Visualize");
+    });
+  });
 });
+
+function openExpressionEditorFromFreshlyLoadedPage() {
+  openReviewsTable({ mode: "notebook" });
+  cy.findByText("Filter").click();
+  cy.findByText("Custom Expression").click();
+}
+
+function typeInExpressionEditor(string) {
+  cy.get("[contenteditable='true']")
+    .click()
+    .type(string);
+}

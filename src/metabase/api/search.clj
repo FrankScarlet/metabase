@@ -21,6 +21,7 @@
             [metabase.models.table :refer [Table]]
             [metabase.search.config :as search-config]
             [metabase.search.scoring :as scoring]
+            [metabase.server.middleware.offset-paging :as offset-paging]
             [metabase.util :as u]
             [metabase.util.honeysql-extensions :as hx]
             [metabase.util.schema :as su]
@@ -74,6 +75,7 @@
    ;; returned for Card, Dashboard, Pulse, and Collection
    :collection_id       :integer
    :collection_name     :text
+   :collection_authority_level :text
    ;; returned for Card and Dashboard
    :collection_position :integer
    :favorite            :boolean
@@ -322,7 +324,8 @@
   (let [match             (wildcard-match (scoring/normalize query))
         columns-to-search (->> all-search-columns
                                (filter (fn [[k v]] (= v :text)))
-                               (map first))
+                               (map first)
+                               (remove #{:collection_authority_level}))
         case-clauses      (as-> columns-to-search <>
                                 (map (fn [col] [:like (hsql/call :lower col) match]) <>)
                                 (interleave <> (repeat 0))
@@ -423,16 +426,16 @@
    archived-string :- (s/maybe su/BooleanString)
    table-db-id :-     (s/maybe su/IntGreaterThanZero)
    models :-          (s/maybe models-schema)
-   limit :-           (s/maybe su/IntStringGreaterThanZero)
-   offset :-          (s/maybe su/IntStringGreaterThanOrEqualToZero)]
+   limit :-           (s/maybe su/IntGreaterThanZero)
+   offset :-          (s/maybe su/IntGreaterThanOrEqualToZero)]
   (cond-> {:search-string     search-string
           :archived?          (Boolean/parseBoolean archived-string)
           :current-user-perms @api/*current-user-permissions-set*}
     (some? table-db-id) (assoc :table-db-id table-db-id)
     (some? models)      (assoc :models
                                (apply hash-set (if (vector? models) models [models])))
-    (some? limit)       (assoc :limit-int (Integer/parseInt limit))
-    (some? offset)      (assoc :offset-int (Integer/parseInt offset))))
+    (some? limit)       (assoc :limit-int limit)
+    (some? offset)      (assoc :offset-int offset)))
 
 (api/defendpoint GET "/models"
   "Get the set of models that a search query will return"
@@ -448,14 +451,18 @@
 
   To specify a list of models, pass in an array to `models`.
   "
-  [q archived table_db_id models limit offset]
+  [q archived table_db_id models]
   {q            (s/maybe su/NonBlankString)
    archived     (s/maybe su/BooleanString)
    table_db_id  (s/maybe su/IntGreaterThanZero)
-   models       (s/maybe models-schema)
-   limit        (s/maybe su/IntStringGreaterThanZero)
-   offset       (s/maybe su/IntStringGreaterThanOrEqualToZero)}
-  (api/check-valid-page-params limit offset)
-  (search (search-context q archived table_db_id models limit offset)))
+   models       (s/maybe models-schema)}
+  (api/check-valid-page-params offset-paging/*limit* offset-paging/*offset*)
+  (search (search-context
+            q
+            archived
+            table_db_id
+            models
+            offset-paging/*limit*
+            offset-paging/*offset*)))
 
 (api/define-routes)

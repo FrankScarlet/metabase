@@ -62,8 +62,7 @@ describe("scenarios > admin > settings", () => {
     cy.contains(
       "To allow users to sign in with Google you'll need to give Metabase a Google Developers console application client ID.",
     );
-    // *** should be 'Save changes'
-    cy.findByText("Save Changes");
+    cy.findByText("Save changes");
 
     // SSO
     cy.visit("/admin/settings/authentication");
@@ -344,10 +343,16 @@ describe("scenarios > admin > settings", () => {
         .type("localhost")
         .blur();
       cy.findByPlaceholderText("587")
-        .type("1234")
+        .type("25")
+        .blur();
+      cy.findByPlaceholderText("youlooknicetoday")
+        .type("admin")
+        .blur();
+      cy.findByPlaceholderText("Shhh...")
+        .type("admin")
         .blur();
       cy.findByPlaceholderText("metabase@yourcompany.com")
-        .type("admin@metabase.com")
+        .type("mailer@metabase.test")
         .blur();
       cy.findByText("Save changes").click();
 

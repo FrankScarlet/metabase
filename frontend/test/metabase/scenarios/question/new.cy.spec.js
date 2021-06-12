@@ -75,6 +75,16 @@ describe("scenarios > question > new", () => {
     cy.get(".Visualization .bar").should("have.length", 6);
   });
 
+  it.skip("should display a tooltip for CTA icons on an individual question (metabase#16108)", () => {
+    openOrdersTable();
+    cy.icon("download").realHover();
+    cy.findByText("Download full results");
+    cy.icon("bell").realHover();
+    cy.findByText("Get alerts");
+    cy.icon("share").realHover();
+    cy.findByText("Sharing");
+  });
+
   describe("browse data", () => {
     it("should load orders table and summarize", () => {
       cy.visit("/");
@@ -410,6 +420,31 @@ describe("scenarios > question > new", () => {
         cy.log("Bug: showing blank visualization");
         cy.get(".ScalarValue").contains("33");
       });
+    });
+
+    it("'read-only' user should be able to resize column width (metabase#9772)", () => {
+      cy.signIn("readonly");
+      cy.visit("/question/1");
+      cy.findByText("Tax")
+        .closest(".TableInteractive-headerCellData")
+        .as("headerCell")
+        .then($cell => {
+          const originalWidth = $cell[0].getBoundingClientRect().width;
+
+          cy.wrap($cell)
+            .find(".react-draggable")
+            .trigger("mousedown", 0, 0, { force: true })
+            .trigger("mousemove", 100, 0, { force: true })
+            .trigger("mouseup", 100, 0, { force: true });
+
+          cy.findByText("Started from").click(); // Give DOM some time to update
+
+          cy.get("@headerCell").then($newCell => {
+            const newWidth = $newCell[0].getBoundingClientRect().width;
+
+            expect(newWidth).to.be.gt(originalWidth);
+          });
+        });
     });
   });
 });
